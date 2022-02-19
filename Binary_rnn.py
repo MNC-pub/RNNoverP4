@@ -12,38 +12,30 @@ from matplotlib import pyplot as plt
 
 __all__ = ['packetRnn']
 
-class PacketRnn(nn.Module):
-
-    def __init__(self, num_classes=1):
-        super(PacketRnn, self).__init__()
-
-        self.features = nn.Sequential(
-            B_RNN(1, 120, kernel_size=(1,120), stride=1, padding=0),
-        )
-
-    def forward(self, x):
-        return self.features(x)
-
-    def init_w(self):
-        # weight initialization
-
-
-        for m in self.modules():
-            if isinstance(m, nn.RNN):
-                nn.init.kaiming_normal_(m.h_0, mode='fan_out')
-                nn.init.kaiming_normal_(m.weight_org, mode='fan_out')
-                #nn.init.uniform_(m.weight, a= .0, b= 0.7)
-                #nn.init.uniform_(m.weight_org, a=.0, b=0.7)
-                # if m.bias is not None:
-                #     nn.init.zeros_(m.bias)
-        return
-
-def packetbnn(num_classes=1):
-    return Packetbnn(num_classes)
 
 def Binarize(tensor):
     # result = (tensor-0.5).sign().add_(1).div_(2)
     return tensor.sign()
+
+class RNN(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, num_classes):
+        super(RNN, self).__init__()
+        self.hidden_size = hidden_size
+        self.num_layers = num_layers
+        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
+        self.fc = nn.Linear(hidden_size, num_classes)
+
+    def forward(self, x):
+        # Set initial hidden and cell states
+        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+
+        # Forward propagate LSTM
+        out, _ = self.lstm(x, (h0, c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)
+
+        # Decode the hidden state of the last time step
+        out = self.fc(out[:, -1, :])
+        return out
 
 
 # class STEFunction(torch.autograd.Function):
@@ -62,21 +54,6 @@ def Binarize(tensor):
 #     def forward(self, x):
 #         x = STEFunction.apply(x)
 #         return x
-
-#
-# class BNNLinear(Linear):
-#
-#     def __init__(self, *kargs, **kwargs):
-#         super(BNNLinear, self).__init__(*kargs, **kwargs)
-#
-#     def forward(self, input):
-#
-#         out = linear(input, self.weight)
-#         if not self.bias is None:
-#             self.bias.org=self.bias.data.clone()
-#             out += self.bias.view(1, -1).expand_as(out)
-#
-#         return out
 
 
 class B_RNN(RNN):
@@ -99,6 +76,15 @@ class B_RNN(RNN):
 
         return out
 
+    def init_w(self):
+        # weight initialization
+        nn.init.kaiming_normal_(self.h_0, mode='fan_out')
+        nn.init.kaiming_normal_(self.weight_org, mode='fan_out')
+        #nn.init.uniform_(m.weight, a= .0, b= 0.7)
+        #nn.init.uniform_(m.weight_org, a=.0, b=0.7)
+        # if m.bias is not None:
+        #     nn.init.zeros_(m.bias)
+        return
 class Bnntrainer():
     def __init__(self, model, bit, lr=0.01, device=None):
         super().__init__()
@@ -160,6 +146,13 @@ if __name__ == '__main__':
     torch.set_printoptions(linewidth=20000)
     # cuda = torch.cuda.is_available()
     # device = torch.device('cuda' if cuda else 'cpu')
+
+    model = PacketRnn(input_size, hidden_size, num_layers, num_classes).to(device)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+
     device = torch.device('cpu')
     # print(device)
     bit = 120
