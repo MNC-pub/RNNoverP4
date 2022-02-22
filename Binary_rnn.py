@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from torch.nn import Module, RNN
+from torch.nn import Module, RNN, Linear, LSTM
 from torch.nn.functional import linear, conv2d
 import labeling
 import torch.nn as nn
@@ -12,32 +12,102 @@ from matplotlib import pyplot as plt
 
 __all__ = ['packetRnn']
 
+sequence_length = 1
+input_size = 120
+hidden_size = 128
+num_layers = 1
+num_classes = 2
+batch_size = 10
+learning_rate = 0.01
 
 def Binarize(tensor):
     # result = (tensor-0.5).sign().add_(1).div_(2)
     return tensor.sign()
 
-class RNN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, num_classes):
-        super(RNN, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, num_classes)
+
+class PacketRnn(nn.Module):
+
+
+    def __init__(self, num_classes=1):
+        super(PacketRnn, self).__init__()
+
+        self.features = nn.Sequential(
+
+            B_RNN(input_size, hidden_size, num_layers, bias = False,  batch_first=True),
+
+            RNNLinear(hidden_size, num_classes),
+
+        )
 
     def forward(self, x):
-        # Set initial hidden and cell states
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        return self.features(x)
 
-        # Forward propagate LSTM
-        out, _ = self.lstm(x, (h0, c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)
+class RNN_cell(nn.module):
 
-        # Decode the hidden state of the last time step
-        out = self.fc(out[:, -1, :])
+    def __init__(self,input_size,hidden_size,output_size, n_layers = 1):
+
+        super(RNN_cell, self).__init__()
+        self.input_size  = input_size
+        self.hidden_size = hidden_size
+        self.n_layers    = 1
+
+        self.x2h_i = torch.nn.Linear(input_size, hidden_size)
+        self.x2h_f = torch.nn.Linear(input_size + hidden_size, hidden_size)
+        self.x2h_o = torch.nn.Linear(input_size + hidden_size, hidden_size)
+        self.x2h_q = torch.nn.Linear(input_size + hidden_size, hidden_size)
+        self.h2o   = torch.nn.Linear(hidden_size, output_size)
+        self.sigmoid = torch.nn.Sigmoid()
+        self.softmax = torch.nn.Softmax()
+        self.tanh    = torch.nn.Tanh()
+
+    def forward(self, batch_size):
+        for i in range(batch_size) :
+            value_ih = self.input * self. weight_ih
+            value_hh = self.last_hidden * self.
+
+        # i_t = self.sigmoid(self.x2h_i(combined_input))
+        # f_t = self.sigmoid(self.x2h_f(combined_input))
+        # o_t = self.sigmoid(self.x2h_o(combined_input))
+        h_t = self.tanh(self.x2h_q(combined_input))
+
+        c_t_next = f_t*c_t + i_t*q_t
+        h_t_next = o_t*self.tanh(c_t_next)
+        output = self.softmax(h_t_next)
+        #todo sign
+        return output, h_t, c_t
+
+    def initHidden(self):
+        return torch.autograd.Variable(torch.zeros(1, self.hidden_size))
+
+    def weights_init(self,model):
+
+        classname = model.__class__.__name__
+        if classname.find('Linear') != -1:
+            model.weight.data.normal_(0.0, 0.02)
+            model.bias.data.fill_(0)
+
+class Binary_AF:
+    def __init__(self, x):
+        self.x = x
+
+    def forward(self):
+        self.x[self.x <= 0] = 0
+        self.x[self.x > 0] = 1
+        return self.x
+
+    def backward(self):
+        return self.x
+
+class RNNLinear(Linear):
+
+    def __init__(self, *kargs, **kwargs):
+        super(RNNLinear, self).__init__(*kargs, **kwargs)
+
+    def forward(self, input):
+
+        out = linear(input, self.weight)
+
         return out
-
-
 # class STEFunction(torch.autograd.Function):
 #     @staticmethod
 #     def forward(ctx, input):
@@ -55,6 +125,7 @@ class RNN(nn.Module):
 #         x = STEFunction.apply(x)
 #         return x
 
+#todo weight initialization
 
 class B_RNN(RNN):
 
