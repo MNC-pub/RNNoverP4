@@ -52,10 +52,12 @@ class RNN(nn.Module):
 
         # Forward propagate LSTM
         out, _ = self.lstm(x, (h0, c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)
-
+        #print("중간 outsize",out.size())
         # Decode the hidden state of the last time step
         out = self.fc(out[:, -1, :])
+        #print(out.size())
         return out
+
 
 
 model = RNN(input_size, hidden_size, num_layers, num_classes).to(device)
@@ -68,13 +70,13 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 total_step = len(train_loader)
 for epoch in range(num_epochs):
     for i, (images, labels) in enumerate(train_loader):
-        print(images.size())
+        #print(images.size())
         images = images.reshape(-1, sequence_length, input_size).to(device)
-        print(images.size())
-#         labels = labels.to(device)
+        #print(images.size())
+        labels = labels.to(device)
 #
 #         # Forward pass
-#         outputs = model(images)
+        outputs = model(images)
 #         loss = criterion(outputs, labels)
 #
 #         # Backward and optimize
@@ -101,7 +103,11 @@ for epoch in range(num_epochs):
 #
 #     print('Test Accuracy of the model on the 10000 test images: {} %'.format(100 * correct / total))
 
-print(list(model.named_parameters()))
-print(model.lstm.bias_hh_l0.size())
+# print(list(model.named_parameters()))
+print(model.lstm.weight_ih_l0.size())
+# #print(labels.size())
+# print(model.lstm.weight_ih_l0.data)
+
+
 # Save the model checkpoint
 torch.save(model.state_dict(), 'model.ckpt')
