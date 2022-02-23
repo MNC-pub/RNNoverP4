@@ -26,15 +26,18 @@ def Binarize(tensor):
 
 
 class PacketRnn(nn.Module):
-
+    input_size = 120
+    hidden_size = 128
 
     def __init__(self, num_classes=1):
         super(PacketRnn, self).__init__()
 
         self.features = nn.Sequential(
-
-            B_RNN(input_size, hidden_size, num_layers, bias = False,  batch_first=True),
-
+            RNN_cell(input_size,hidden_size),
+            RNN_cell(input_size, hidden_size),
+            RNN_cell(input_size, hidden_size),
+            RNN_cell(input_size, hidden_size),
+            RNN_cell(input_size, hidden_size),
             RNNLinear(hidden_size, num_classes),
 
         )
@@ -44,37 +47,25 @@ class PacketRnn(nn.Module):
 
 class RNN_cell(nn.module):
 
-    def __init__(self,input_size,hidden_size,output_size, n_layers = 1):
+    def __init__(self,input_size,hidden_size, n_layers = 1):
 
         super(RNN_cell, self).__init__()
         self.input_size  = input_size
         self.hidden_size = hidden_size
         self.n_layers    = 1
-
         self.x2h_i = torch.nn.Linear(input_size, hidden_size)
-        self.x2h_f = torch.nn.Linear(input_size + hidden_size, hidden_size)
-        self.x2h_o = torch.nn.Linear(input_size + hidden_size, hidden_size)
-        self.x2h_q = torch.nn.Linear(input_size + hidden_size, hidden_size)
-        self.h2o   = torch.nn.Linear(hidden_size, output_size)
+        self.h2o   = torch.nn.Linear(hidden_size, hidden_size)
         self.sigmoid = torch.nn.Sigmoid()
-        self.softmax = torch.nn.Softmax()
-        self.tanh    = torch.nn.Tanh()
 
-    def forward(self, batch_size):
-        for i in range(batch_size) :
-            value_ih = self.input * self. weight_ih
-            value_hh = self.last_hidden * self.
+    def forward(self, input):
+        input.data = Binary_AF(self.input)
+        #todo hidden value binarize
+        Binary_AF
+        middle = self.x2h_i(self.input) + self.h2o(self.last_hidden)
+        output = self.sign(middle)
+        h_t = output.clone()
 
-        # i_t = self.sigmoid(self.x2h_i(combined_input))
-        # f_t = self.sigmoid(self.x2h_f(combined_input))
-        # o_t = self.sigmoid(self.x2h_o(combined_input))
-        h_t = self.tanh(self.x2h_q(combined_input))
-
-        c_t_next = f_t*c_t + i_t*q_t
-        h_t_next = o_t*self.tanh(c_t_next)
-        output = self.softmax(h_t_next)
-        #todo sign
-        return output, h_t, c_t
+        return output, h_t
 
     def initHidden(self):
         return torch.autograd.Variable(torch.zeros(1, self.hidden_size))
