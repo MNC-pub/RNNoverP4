@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from torch.nn import Module, RNN, Linear, LSTM
-from torch.nn.functional import linear, conv2d
+from torch.nn.functional import linear, conv2d, hardtanh
 import labeling
 import torch.nn as nn
 #from torch.autograd import Variable
@@ -21,9 +21,11 @@ batch_size = 10
 learning_rate = 0.01
 
 def Binarize(tensor):
-    # result = (tensor-0.5).sign().add_(1).div_(2)
+    #result = (tensor-0.5).sign()
     return tensor.sign()
 
+def input_Binarize(tensor):
+    return tensor.sub_(0.5).sign()
 
 class PacketRnn(nn.Module):
     input_size = 120
@@ -45,6 +47,25 @@ class PacketRnn(nn.Module):
     def forward(self, x):
         return self.features(x)
 
+    def init_w(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                #nn.init.kaiming_normal_(m.weight, mode='fan_out')
+                nn.init.kaiming_normal_(self.h_0, mode='fan_out')
+                nn.init.kaiming_normal_(self.weight_org, mode='fan_out')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            # elif isinstance(m, nn.BatchNorm2d):
+            #     nn.init.ones_(m.weight)
+            #     nn.init.zeros_(m.bias)
+            # elif isinstance(m, nn.GroupNorm):
+            #     nn.init.ones_(m.weight)
+            #     nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.uniform_(m.weight, a= 1., b= 1.)
+                nn.init.zeros_(m.bias)
+        return
+
 class RNN_cell(nn.module):
 
     def __init__(self,input_size,hidden_size, n_layers = 1):
@@ -52,17 +73,20 @@ class RNN_cell(nn.module):
         super(RNN_cell, self).__init__()
         self.input_size  = input_size
         self.hidden_size = hidden_size
-        self.n_layers    = 1
+        self.n_layers = 1
         self.x2h_i = torch.nn.Linear(input_size, hidden_size)
         self.h2o   = torch.nn.Linear(hidden_size, hidden_size)
-        self.sigmoid = torch.nn.Sigmoid()
+        self.register_buffer('weight_org', self.weight_ih_l0.data.clone())
+        self.register_buffer('weight_org', self.weight_hh_l0.data.clone())
 
     def forward(self, input):
-        input.data = Binary_AF(self.input)
+        input.data = input_Binarize(self.input)
+        weight_ih_l0 = Binarize(self.weight_ih_l0)
+        weight_hh_l0 = Binarize(self.weight_hh_l0)
         #todo hidden value binarize
-        Binary_AF
         middle = self.x2h_i(self.input) + self.h2o(self.last_hidden)
-        output = self.sign(middle)
+        output = StraightThroughEstimator(middle)
+        # output = nn.sign(middle)
         h_t = output.clone()
 
         return output, h_t
@@ -77,17 +101,17 @@ class RNN_cell(nn.module):
             model.weight.data.normal_(0.0, 0.02)
             model.bias.data.fill_(0)
 
-class Binary_AF:
-    def __init__(self, x):
-        self.x = x
-
-    def forward(self):
-        self.x[self.x <= 0] = 0
-        self.x[self.x > 0] = 1
-        return self.x
-
-    def backward(self):
-        return self.x
+# class Binary_AF:
+#     def __init__(self, x):
+#         self.x = x
+#
+#     def forward(self):
+#         self.x[self.x <= 0] = 0
+#         self.x[self.x > 0] = 1
+#         return self.x
+#
+#     def backward(self):
+#         return self.x
 
 class RNNLinear(Linear):
 
@@ -99,54 +123,47 @@ class RNNLinear(Linear):
         out = linear(input, self.weight)
 
         return out
-# class STEFunction(torch.autograd.Function):
-#     @staticmethod
-#     def forward(ctx, input):
-#         return (input > 0).float()
-#
-#     @staticmethod
-#     def backward(ctx, grad_output):
-#         return hardtanh(grad_output)
-#
-# class StraightThroughEstimator(nn.Module):
-#     def __init__(self):
-#         super(StraightThroughEstimator, self).__init__()
-#
-#     def forward(self, x):
-#         x = STEFunction.apply(x)
-#         return x
+
+class STEFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        return (input > 0).mul_(2).sub_(1).float()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return hardtanh(grad_output)
+
+class StraightThroughEstimator(nn.Module):
+    def __init__(self):
+        super(StraightThroughEstimator, self).__init__()
+
+    def forward(self, x):
+        x = STEFunction.apply(x)
+        return x
 
 #todo weight initialization
 
-class B_RNN(RNN):
+# class B_RNN(RNN):
+#
+#     def __init__(self, *kargs, **kwargs):
+#         super(B_RNN, self).__init__(*kargs, **kwargs)
+#         self.register_buffer('weight_org', self.weight.data.clone())
+#
+#     def forward(self, input):
+#
+#         input.data = Binarize(input.data)
+#
+#         self.weight.data = Binarize(self.weight_org)
+#
+#         out = RNN(input, self.h_0)
+#         #
+#         # if not self.bias is None:
+#         #     self.bias.org=self.bias.data.clone()
+#         #     out += self.bias.view(1, -1, 1, 1).expand_as(out)
+#
+#         return out
 
-    def __init__(self, *kargs, **kwargs):
-        super(B_RNN, self).__init__(*kargs, **kwargs)
-        self.register_buffer('weight_org', self.weight.data.clone())
 
-    def forward(self, input):
-
-        input.data = Binarize(input.data)
-
-        self.weight.data = Binarize(self.weight_org)
-
-        out = RNN(input, self.h_0)
-        #
-        # if not self.bias is None:
-        #     self.bias.org=self.bias.data.clone()
-        #     out += self.bias.view(1, -1, 1, 1).expand_as(out)
-
-        return out
-
-    def init_w(self):
-        # weight initialization
-        nn.init.kaiming_normal_(self.h_0, mode='fan_out')
-        nn.init.kaiming_normal_(self.weight_org, mode='fan_out')
-        #nn.init.uniform_(m.weight, a= .0, b= 0.7)
-        #nn.init.uniform_(m.weight_org, a=.0, b=0.7)
-        # if m.bias is not None:
-        #     nn.init.zeros_(m.bias)
-        return
 class Bnntrainer():
     def __init__(self, model, bit, lr=0.01, device=None):
         super().__init__()
