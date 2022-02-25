@@ -66,52 +66,43 @@ class PacketRnn(nn.Module):
                 nn.init.zeros_(m.bias)
         return
 
-class RNN_cell(nn.module):
-
-    def __init__(self,input_size,hidden_size, n_layers = 1):
-
-        super(RNN_cell, self).__init__()
-        self.input_size  = input_size
-        self.hidden_size = hidden_size
-        self.n_layers = 1
-        self.x2h_i = torch.nn.Linear(input_size, hidden_size)
-        self.h2o   = torch.nn.Linear(hidden_size, hidden_size)
-        self.register_buffer('weight_org', self.weight_ih_l0.data.clone())
-        self.register_buffer('weight_org', self.weight_hh_l0.data.clone())
-
-    def forward(self, input):
-        input.data = input_Binarize(self.input)
-        weight_ih_l0 = Binarize(self.weight_ih_l0)
-        weight_hh_l0 = Binarize(self.weight_hh_l0)
-        #todo hidden value binarize
-        middle = self.x2h_i(self.input) + self.h2o(self.last_hidden)
-        output = StraightThroughEstimator(middle)
-        # output = nn.sign(middle)
-        h_t = output.clone()
-
-        return output, h_t
-
-    def initHidden(self):
-        return torch.autograd.Variable(torch.zeros(1, self.hidden_size))
-
-    def weights_init(self,model):
-
-        classname = model.__class__.__name__
-        if classname.find('Linear') != -1:
-            model.weight.data.normal_(0.0, 0.02)
-            model.bias.data.fill_(0)
-
-# class Binary_AF:
-#     def __init__(self, x):
-#         self.x = x
+# class RNN_cell(nn.module):
 #
-#     def forward(self):
-#         self.x[self.x <= 0] = 0
-#         self.x[self.x > 0] = 1
-#         return self.x
+#     def __init__(self,input_size,hidden_size, n_layers = 1):
 #
-#     def backward(self):
-#         return self.x
+#         super(RNN_cell, self).__init__()
+#         self.input_size  = input_size
+#         self.hidden_size = hidden_size
+#         self.n_layers = 1
+#         self.x2h_i = torch.nn.Linear(input_size, hidden_size)
+#         self.h2o   = torch.nn.Linear(hidden_size, hidden_size)
+#         # self.register_buffer('ih_weight_org', self.weight_ih_l0.data.clone())
+#         # self.register_buffer('hh_weight_org', self.weight_hh_l0.data.clone())
+#         self.register_buffer('ih_weight_org', self.x2h_i.weight.data.clone())
+#         self.register_buffer('hh_weight_org', self.h2o.weight.data.clone())
+#     def forward(self, input):
+#         input.data = input_Binarize(self.input)
+#         self.x2h_i.weight.data = Binarize(self.ih_weight_org)
+#         self.h2o.weight.data = Binarize(self.hh_weight_org)
+#         #todo hidden value binarize
+#         middle = self.x2h_i(self.input) + self.h2o(self.last_hidden)
+#         output = StraightThroughEstimator(middle)
+#         # output = nn.sign(middle)
+#         h_t = output.clone()
+#
+#         return output, h_t
+#
+#     def initHidden(self):
+#         return torch.autograd.Variable(torch.zeros(1, self.hidden_size))
+#
+#     def weights_init(self,model):
+#
+#         classname = model.__class__.__name__
+#         if classname.find('Linear') != -1:
+#             model.weight.data.normal_(0.0, 0.02)
+#             model.bias.data.fill_(0)
+
+
 
 class RNNLinear(Linear):
 
@@ -143,25 +134,50 @@ class StraightThroughEstimator(nn.Module):
 
 #todo weight initialization
 
-# class B_RNN(RNN):
-#
-#     def __init__(self, *kargs, **kwargs):
-#         super(B_RNN, self).__init__(*kargs, **kwargs)
-#         self.register_buffer('weight_org', self.weight.data.clone())
-#
-#     def forward(self, input):
-#
-#         input.data = Binarize(input.data)
-#
-#         self.weight.data = Binarize(self.weight_org)
-#
-#         out = RNN(input, self.h_0)
-#         #
-#         # if not self.bias is None:
-#         #     self.bias.org=self.bias.data.clone()
-#         #     out += self.bias.view(1, -1, 1, 1).expand_as(out)
-#
-#         return out
+class B_RNN(input_size,hidden_size, batch_size) :
+    def __init__(self,input_size,hidden_size, batch_size):
+        super(B_RNN, self).__init__()
+        self.input_size  = input_size
+        self.hidden_size = hidden_size
+        self.batch_size = batch_size
+        self.n_layers = 1
+    #weight initialize
+        self.h_t = None
+        self.weight_ih = torch.randn((), device=device, dtype=torch.float, requires_grad=True)
+        self.weight_hh = torch.randn((), device=device, dtype=torch.float, requires_grad=True)
+
+
+    def forward(self, input):
+        for self.h_t == None :
+            self.h_t = torch.autograd.Variable(torch.zeros(1, self.hidden_size))
+        data_ih = torch.zeros(1, hidden_size)
+        data_hh = torch.zeros(1, hidden_size)
+        middle = torch.zeros(1, hidden_size)
+        # 1과 0이던 input을 1과 -1인 형식으로 변경
+        input = input_Binarize(input)
+
+        for i in range(batch_size):
+
+            data_ih = torch.dot(input[i], self.weight_ih)
+            data_hh = torch.dot(self.h_t, self.weight_hh)
+            middle = data_ih + data_hh
+            #         output = StraightThroughEstimator(middle)
+
+
+        self.x2h_i.weight.data = Binarize(self.ih_weight_org)
+        self.h2o.weight.data = Binarize(self.hh_weight_org)
+        #todo hidden value binarize
+        middle = self.x2h_i(self.input) + self.h2o(self.last_hidden)
+        output = StraightThroughEstimator(middle)
+        # output = nn.sign(middle)
+        h_t = output.clone()
+
+
+
+
+
+
+
 
 
 class Bnntrainer():
