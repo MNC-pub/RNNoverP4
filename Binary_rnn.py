@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from torch.nn import Module, RNN, Linear, LSTM
+from torch.nn import Module, RNN, Linear
 from torch.nn.functional import linear, conv2d, hardtanh
 import labeling
 import torch.nn as nn
@@ -9,12 +9,9 @@ import torch.autograd as autograd
 import sys
 from matplotlib import pyplot as plt
 
-
-__all__ = ['packetRnn']
-
 sequence_length = 1
 input_size = 120
-hidden_size = 128
+hidden_size = 240
 num_layers = 1
 num_classes = 2
 batch_size = 10
@@ -28,18 +25,12 @@ def input_Binarize(tensor):
     return tensor.sub_(0.5).sign()
 
 class PacketRnn(nn.Module):
-    input_size = 120
-    hidden_size = 128
 
     def __init__(self, num_classes=1):
         super(PacketRnn, self).__init__()
 
         self.features = nn.Sequential(
-            RNN_cell(input_size,hidden_size),
-            RNN_cell(input_size, hidden_size),
-            RNN_cell(input_size, hidden_size),
-            RNN_cell(input_size, hidden_size),
-            RNN_cell(input_size, hidden_size),
+            B_RNN(input_size,hidden_size),
             RNNLinear(hidden_size, num_classes),
 
         )
@@ -49,10 +40,11 @@ class PacketRnn(nn.Module):
 
     def init_w(self):
         for m in self.modules():
-            if isinstance(m, nn.Conv2d):
+            if isinstance(m, RNN):
                 #nn.init.kaiming_normal_(m.weight, mode='fan_out')
-                nn.init.kaiming_normal_(self.h_0, mode='fan_out')
-                nn.init.kaiming_normal_(self.weight_org, mode='fan_out')
+                m.h_t = torch.autograd.Variable(torch.zeros(1, hidden_size))
+                nn.init.kaiming_normal_(self.weight_ih_org, mode='fan_out')
+                nn.init.kaiming_normal_(self.weight_hh_org, mode='fan_out')
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             # elif isinstance(m, nn.BatchNorm2d):
@@ -102,8 +94,6 @@ class PacketRnn(nn.Module):
 #             model.weight.data.normal_(0.0, 0.02)
 #             model.bias.data.fill_(0)
 
-
-
 class RNNLinear(Linear):
 
     def __init__(self, *kargs, **kwargs):
@@ -115,82 +105,75 @@ class RNNLinear(Linear):
 
         return out
 
-class STEFunction(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input):
-        return (input > 0).mul_(2).sub_(1).float()
-
-    @staticmethod
-    def backward(ctx, grad_output):
-        return hardtanh(grad_output)
-
-class StraightThroughEstimator(nn.Module):
-    def __init__(self):
-        super(StraightThroughEstimator, self).__init__()
-
-    def forward(self, x):
-        x = STEFunction.apply(x)
-        return x
+# class STEFunction(torch.autograd.Function):
+#     @staticmethod
+#     def forward(ctx, input):
+#         return (input > 0).mul_(2).sub_(1).float()
+#
+#     @staticmethod
+#     def backward(ctx, grad_output):
+#         return hardtanh(grad_output)
+#
+# class StraightThroughEstimator(nn.Module):
+#     def __init__(self):
+#         super(StraightThroughEstimator, self).__init__()
+#
+#     def forward(self, x):
+#         x = STEFunction.apply(x)
+#         return x
 
 #todo weight initialization
 
-class B_RNN(input_size,hidden_size, batch_size) :
-    def __init__(self,input_size,hidden_size, batch_size):
-        super(B_RNN, self).__init__()
-        self.input_size  = input_size
-        self.hidden_size = hidden_size
-        self.batch_size = batch_size
+class B_RNN(RNN) :
+    def __init__(self, *kargs, **kwargs):
+        super(B_RNN, self).__init__(*kargs, **kwargs)
+        self.input_size  = 120
+        self.hidden_size = 240
+        self.batch_size = 10
         self.n_layers = 1
     #weight initialize
         self.h_t = None
         self.weight_ih = torch.randn((), device=device, dtype=torch.float, requires_grad=True)
         self.weight_hh = torch.randn((), device=device, dtype=torch.float, requires_grad=True)
-
+        self.register_buffer('weight_ih_org', self.weight_ih.data.clone())
+        self.register_buffer('weight_hh_org', self.weight_ih.data.clone())
 
     def forward(self, input):
-        for self.h_t == None :
-            self.h_t = torch.autograd.Variable(torch.zeros(1, self.hidden_size))
+        # for self.h_t == None :
+            # self.h_t = torch.autograd.Variable(torch.zeros(1, self.hidden_size))
         data_ih = torch.zeros(1, hidden_size)
         data_hh = torch.zeros(1, hidden_size)
         middle = torch.zeros(1, hidden_size)
+
         # 1과 0이던 input을 1과 -1인 형식으로 변경
         input = input_Binarize(input)
+        self.h_t = Binarize(self.h_t)
 
-        for i in range(batch_size):
+        self.x2h_i.weight.data = Binarize(self.weight_ih_org)
+        self.h2o.weight.data = Binarize(self.weight_hh_org)
+
+        for i in range(self.batch_size):
 
             data_ih = torch.dot(input[i], self.weight_ih)
             data_hh = torch.dot(self.h_t, self.weight_hh)
             middle = data_ih + data_hh
-            #         output = StraightThroughEstimator(middle)
-
-
-        self.x2h_i.weight.data = Binarize(self.ih_weight_org)
-        self.h2o.weight.data = Binarize(self.hh_weight_org)
-        #todo hidden value binarize
-        middle = self.x2h_i(self.input) + self.h2o(self.last_hidden)
-        output = StraightThroughEstimator(middle)
+            #ste function?
+            self.h_t = torch.sign(middle)
         # output = nn.sign(middle)
-        h_t = output.clone()
 
+        return self.h_t
 
-
-
-
-
-
-
-
-class Bnntrainer():
-    def __init__(self, model, bit, lr=0.01, device=None):
+class B_RNNtrainer():
+    def __init__(self, model, bit= 120, lr=0.01, device=None):
         super().__init__()
         self.model = model
-        self.bit = bit
         self.lr = lr
+        self.bit = bit
         self.device = device
 
-    def train_step(self, optimizer):
+    def train_step(self):
         #data = torch.zeros(182000, self.bit)
-        data = torch.zeros(100000, self.bit)
+        data = torch.zeros(10000, self.bit)
         epoch_losses = []
         epoch_loss = 0
         input = torch.zeros(1,1,1,self.bit)
@@ -202,7 +185,7 @@ class Bnntrainer():
         t = 0
         for line in content:
             k = 0
-            if t ==100000 :
+            if t ==1000 :
                 break
             for i in line:
                 if i.isdigit() == True:
@@ -239,49 +222,37 @@ if __name__ == '__main__':
     # content = f.readlines()
     torch.set_printoptions(threshold=50000)
     torch.set_printoptions(linewidth=20000)
-    # cuda = torch.cuda.is_available()
-    # device = torch.device('cuda' if cuda else 'cpu')
+    cuda = torch.cuda.is_available()
+    device = torch.device('cuda' if cuda else 'cpu')
 
-    model = PacketRnn(input_size, hidden_size, num_layers, num_classes).to(device)
-
+    model = B_RNN(input_size= 120 ,hidden_size = 240, batch_size = 10)
+    model.init_w()
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-
-    device = torch.device('cpu')
-    # print(device)
-    bit = 120
-    Packetbnn = packetbnn()
-    # model = eval("packetbnn")()
-    # model.to(device)
-    Packetbnn.to(device)
-    Packetbnn.init_w()
-
     # sample input
 
-    Bnn = Bnntrainer(Packetbnn, bit=120, device='cuda')
-    optimizer = torch.optim.Adam(Packetbnn.parameters(), lr=0.002, weight_decay=1e-7)
-    ini_weight = Packetbnn.features[0].weight.clone()
-    ini_weight_org = Packetbnn.features[0].weight_org.clone()
-    epoch_losses= Bnn.train_step(optimizer)
-    b = []
-    c = []
-    for i in epoch_losses:
-        k = 0
-        if k%100 == 0 :
-            b.append(i[0])
-            c.append(i[1])
-        k +=1
+    B_RNN = B_RNNtrainer(model, bit = 120, device='cuda')
+    #optimizer = torch.optim.Adam(Packetbnn.parameters(), lr=0.002, weight_decay=1e-7)
+    epoch_losses= B_RNN.train_step()
+    # b = []
+    # c = []
+    # for i in epoch_losses:
+    #     k = 0
+    #     if k%100 == 0 :
+    #         b.append(i[0])
+    #         c.append(i[1])
+    #     k +=1
 
     # fig, ax = plt.subplots(1, 1)
     # ax.plot(b, c, 'k', 9, label='bnn_loss sum')
     # plt.show()
-    final_weight = Packetbnn.features[0].weight
-    final_weight_org = Packetbnn.features[0].weight_org
-
-    print(ini_weight[0])
-    print(final_weight[0])
-    print(ini_weight[0]-final_weight[0])
+    # final_weight = Packetbnn.features[0].weight
+    # final_weight_org = Packetbnn.features[0].weight_org
+    #
+    # print(ini_weight[0])
+    # print(final_weight[0])
+    # print(ini_weight[0]-final_weight[0])
     #
     # print(ini_weight_org[0])
     # print(final_weight_org[0])
