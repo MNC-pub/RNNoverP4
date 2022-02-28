@@ -1,113 +1,70 @@
+import numpy as np
 import torch
+from torch.nn import Module, RNN, Linear
+from torch.nn.functional import linear, conv2d, hardtanh
 import torch.nn as nn
-import torchvision
-import torchvision.transforms as transforms
-
-# Device configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-# Hyper-parameters
-sequence_length = 28
-input_size = 28
-hidden_size = 128
+#from torch.autograd import Variable
+import torch.autograd as autograd
+import sys
+from matplotlib import pyplot as plt
+sequence_length = 1
+input_size = 10
+hidden_size = 100
 num_layers = 1
-num_classes = 10
-batch_size = 100
-num_epochs = 2
+num_classes = 2
+batch_size = 10
 learning_rate = 0.01
 
-# MNIST dataset
-train_dataset = torchvision.datasets.MNIST(root='../../data/',
-                                           train=True,
-                                           transform=transforms.ToTensor(),
-                                           download=True)
+def Binarize(tensor):
+    #result = (tensor-0.5).sign()
+    return tensor.sign()
 
-test_dataset = torchvision.datasets.MNIST(root='../../data/',
-                                          train=False,
-                                          transform=transforms.ToTensor())
+def input_Binarize(tensor):
+    return tensor.sub_(0.5).sign()
 
-# Data loader
-train_loader = torch.utils.data.DataLoader(dataset=train_dataset,
-                                           batch_size=batch_size,
-                                           shuffle=True)
+class B_RNN(RNN) :
+    def __init__(self, *kargs, **kwargs):
+        super(B_RNN, self).__init__(*kargs, **kwargs)
+        self.input_size  = 10
+        self.hidden_size = 240
+        self.batch_size = 10
+        self.n_layers = 1
+    #weight initialize
+        self.h_t = torch.autograd.Variable(torch.zeros(1, self.hidden_size))
+        self.weight_ih = torch.randn((), device='cpu', dtype=torch.float, requires_grad=True)
+        self.weight_hh = torch.randn((), device='cpu', dtype=torch.float, requires_grad=True)
+        self.register_buffer('weight_ih_org', self.weight_ih.data.clone())
+        self.register_buffer('weight_hh_org', self.weight_ih.data.clone())
 
-test_loader = torch.utils.data.DataLoader(dataset=test_dataset,
-                                          batch_size=batch_size,
-                                          shuffle=False)
+    def forward(self, input):
+        # for self.h_t == None :
+            # self.h_t = torch.autograd.Variable(torch.zeros(1, self.hidden_size))
+        data_ih = torch.zeros(1, hidden_size)
+        data_hh = torch.zeros(1, hidden_size)
+        middle = torch.zeros(1, hidden_size)
 
+        # 1과 0이던 input을 1과 -1인 형식으로 변경
+        input = input_Binarize(input)
+        self.h_t = Binarize(self.h_t)
 
-# Recurrent neural network (many-to-one)
-class RNN(nn.Module):
-    def __init__(self, input_size, hidden_size, num_layers, num_classes):
-        super(RNN, self).__init__()
-        self.hidden_size = hidden_size
-        self.num_layers = num_layers
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, num_classes)
+        self.weight_ih.data = Binarize(self.weight_ih_org)
+        self.weight_hh.data = Binarize(self.weight_hh_org)
 
-    def forward(self, x):
-        # Set initial hidden and cell states
-        h0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
-        c0 = torch.zeros(self.num_layers, x.size(0), self.hidden_size).to(device)
+        for i in range(self.batch_size):
 
-        # Forward propagate LSTM
-        out, _ = self.lstm(x, (h0, c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)
-        #print("중간 outsize",out.size())
-        # Decode the hidden state of the last time step
-        out = self.fc(out[:, -1, :])
-        #print(out.size())
-        return out
+            data_ih = torch.dot(input[i], self.weight_ih)
+            data_hh = torch.dot(self.h_t, self.weight_hh)
+            middle = data_ih + data_hh
+            #ste function?
+            self.h_t = torch.sign(middle)
+        # output = nn.sign(middle)
 
+        return self.h_t
 
+B_RNN = B_RNN(input_size = 10, hidden_size = 100)
 
-model = RNN(input_size, hidden_size, num_layers, num_classes).to(device)
+input = torch.randn(1,10,10)
 
-# Loss and optimizer
-criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+output = B_RNN.forward(input)
+print(output)
 
-# Train the model
-total_step = len(train_loader)
-for epoch in range(num_epochs):
-    for i, (images, labels) in enumerate(train_loader):
-        #print(images.size())
-        images = images.reshape(-1, sequence_length, input_size).to(device)
-        #print(images.size())
-        labels = labels.to(device)
-#
-#         # Forward pass
-        outputs = model(images)
-#         loss = criterion(outputs, labels)
-#
-#         # Backward and optimize
-#         optimizer.zero_grad()
-#         loss.backward()
-#         optimizer.step()
-#
-#         if (i + 1) % 100 == 0:
-#             print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'
-#                   .format(epoch + 1, num_epochs, i + 1, total_step, loss.item()))
-
-# Test the model
-# model.eval()
-# with torch.no_grad():
-#     correct = 0
-#     total = 0
-#     for images, labels in test_loader:
-#         images = images.reshape(-1, sequence_length, input_size).to(device)
-#         labels = labels.to(device)
-#         outputs = model(images)
-#         _, predicted = torch.max(outputs.data, 1)
-#         total += labels.size(0)
-#         correct += (predicted == labels).sum().item()
-#
-#     print('Test Accuracy of the model on the 10000 test images: {} %'.format(100 * correct / total))
-
-# print(list(model.named_parameters()))
-print(model.lstm.weight_ih_l0.size())
-# #print(labels.size())
-# print(model.lstm.weight_ih_l0.data)
-
-
-# Save the model checkpoint
-torch.save(model.state_dict(), 'model.ckpt')
