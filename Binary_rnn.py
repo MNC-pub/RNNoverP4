@@ -15,7 +15,7 @@ hidden_size = 128
 # num_layers = 1
 num_classes = 2
 batch_size = 1
-learning_rate = 0.01
+learning_rate = 0.001
 
 def Binarize(tensor):
     #result = (tensor-0.5).sign()
@@ -31,7 +31,7 @@ class PacketRnn(nn.Module):
 
         self.features = nn.Sequential(
             B_RNN(input_size,hidden_size),
-            RNNLinear(hidden_size, num_classes),
+            RNNLinear(hidden_size, 1),
 
         )
 
@@ -56,7 +56,7 @@ class PacketRnn(nn.Module):
             #     nn.init.ones_(m.weight)
             #     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Linear):
-                nn.init.uniform_(m.weight, a= 1., b= 1.)
+                nn.init.uniform_(m.weight, a= .9, b= 1.)
                 nn.init.zeros_(m.bias)
         return
 
@@ -68,7 +68,7 @@ class RNNLinear(Linear):
     def forward(self, input):
 
         out = linear(input, self.weight)
-
+        out = out/10
         return out
 
 #todo weight initialization
@@ -112,7 +112,7 @@ class B_RNN(RNN) :
         return self.h_t[10]
 
 class B_RNNtrainer():
-    def __init__(self, model, bit= 128, lr=0.01, device=None):
+    def __init__(self, model, bit= 128, lr=0.001, device=None):
         super().__init__()
         self.model = model
         self.lr = lr
@@ -122,43 +122,53 @@ class B_RNNtrainer():
     def train_step(self,optimizer):
         #data = torch.zeros(182000, self.bit)
         data = torch.zeros(100000, self.bit)
-        target = torch.zeros(10000, 2)
+        target = torch.zeros(180000, 1)
         Target=0
         epoch_losses = []
         epoch_loss = 0
-        f = open("finallabel.txt", "r")
+        f = open("11label.txt", "r")
         content = f.readlines()
         label_Index = 0
         for line in content:
             for i in line:
                 if i.isdigit() == True:
-                    if i == 0 :
-                        target[label_Index][0] = torch.tensor(int(i))
-                    elif i == 1:
-                        target[label_Index][1] = torch.tensor(int(i))
+
+                    # if i == 0 :
+                    #     target[label_Index][0] = torch.tensor(int(i))
+                    # elif i == 1:
+                    #     target[label_Index][1] = torch.tensor(int(i))
+                    target[label_Index] = torch.tensor(int(i))
                     #target[label_Index] = torch.tensor(int(i))
                     label_Index +=1
         input = torch.zeros(1,10,self.bit)
-
         f = open("final.txt", "r")
         content = f.readlines()
         #t means packet sequence
         t = 0
         for line in content:
             k = 0
-            if t ==1000 :
+            if t ==10000 :
                 break
             for i in line:
                 if i.isdigit() == True:
                     data[t][k] = int(i)
                     k += 1
-            input[0][t%10] = data[t]
-            if (t+1)%10 == 0 :
+            if t < 9:
+                input[0][t] = data[t]
+            elif t >= 9 :
                 #input[0][t] = data[t]
                 #input, target = input.to(self.device), target.to(self.device)
-                output = self.model(input)
 
-                loss = (output-target).pow(2).sum()
+                if t > 9 :
+                    for index in range(9):
+                        input[0][index] = input[0][index+1]
+                input[0][9] = data[t]
+
+                output = self.model(input)
+                # print("output",output)
+                # print("target",target[t])
+                loss = (output-target[t]).pow(2).sum()
+
                 #Target = target[int((t-9)/10)].long
                 #loss = criterion(output, Target)
                 loss = autograd.Variable(loss, requires_grad=True)
@@ -180,6 +190,69 @@ class B_RNNtrainer():
             t +=1
         return epoch_losses
 
+class test_RNNtrainer():
+    def __init__(self, model, bit= 128, lr=0.001, device=None):
+        super().__init__()
+        self.model = model
+        self.lr = lr
+        self.bit = bit
+        self.device = device
+
+    def test(self, final_w, test_start) :
+
+        self.model.features[0].weight_ih_l0 = torch.nn.Parameter(final_w)
+
+        accuracy = 0
+        data = torch.zeros(100000, 128)
+        target = torch.zeros(180000, 1)
+
+        f = open("11label.txt", "r")
+        content = f.readlines()
+        label_Index = 0
+        for line in content:
+            for i in line:
+                if i.isdigit() == True:
+                    # if i == 0 :
+                    #     target[label_Index][0] = torch.tensor(int(i))
+                    # elif i == 1:
+                    #     target[label_Index][1] = torch.tensor(int(i))
+                    target[label_Index] = torch.tensor(int(i))
+                    # target[label_Index] = torch.tensor(int(i))
+                    label_Index += 1
+        input = torch.zeros(1, 10, 128)
+        f = open("final.txt", "r")
+        content = f.readlines()
+        # t means packet sequence
+        t = 0
+        for line in content:
+            k = 0
+
+            if t == test_start+10000:
+                break
+            for i in line:
+                if i.isdigit() == True:
+                    data[t][k] = int(i)
+                    k += 1
+            if t >= test_start  :
+                if t < test_start+9 :
+                    input[0][t-test_start] = data[t]
+                else :
+
+                    if t > test_start+9:
+                        for index in range(9):
+                            input[0][index] = input[0][index + 1]
+                    input[0][9] = data[t]
+                    output = self.model(input)
+
+                    Binary_output = output.sign().div_(2).add_(0.5)
+                    print("Binary_output", output)
+                    print("target[t]", target[t])
+                    if int(Binary_output) == target[t] :
+
+                        accuracy +=0.01
+            t += 1
+        return accuracy
+
 if __name__ == '__main__':
     #data load
     # f = open("output.txt", "r")
@@ -192,34 +265,27 @@ if __name__ == '__main__':
     #model = PacketRnn(input_size= input_size ,hidden_size = 240)
     model = PacketRnn()
     model.init_w()
+    ini_w = model.features[0].weight_ih_l0.clone()
 
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-7)
-
-
-    # sample input
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     B_RNN = B_RNNtrainer(model, bit = 128, device='cuda')
-    #optimizer = torch.optim.Adam(model.parameters(), lr=0.002, weight_decay=1e-7)
     epoch_losses= B_RNN.train_step(optimizer)
 
-    print(model.features[0].weight_ih_l0)
+    final_w = model.features[0].weight_ih_l0.clone()
 
-    # fig, ax = plt.subplots(1, 1)
-    # ax.plot(b, c, 'k', 9, label='bnn_loss sum')
-    # plt.show()
-    # final_weight = Packetbnn.features[0].weight
-    # final_weight_org = Packetbnn.features[0].weight_org
-    #
-    # print(ini_weight[0])
-    # print(final_weight[0])
-    # print(ini_weight[0]-final_weight[0])
-    #
-    # print(ini_weight_org[0])
-    # print(final_weight_org[0])
-    # print(ini_weight_org[0]-final_weight_org[0])
 
-    # sys.stdout = open('weight.txt', 'w')
-    #
-    # print(Packetbnn.features[0].weight)
+    test_B_RNN = test_RNNtrainer(model, bit=128, device='cuda')
+    accuracy = test_B_RNN.test(final_w, 10000)
+
+
+    print(accuracy)
+
+
+    # print(ini_w-final_w)
+    # print("final_w", final_w)
+
+
+
 
