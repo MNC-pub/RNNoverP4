@@ -5,16 +5,18 @@ from torch.nn.functional import linear, conv2d, hardtanh
 import torch.nn as nn
 #from torch.autograd import Variable
 import torch.autograd as autograd
+import torch.nn.functional as F
 import sys
 from matplotlib import pyplot as plt
 
 sequence_length = 1
 input_size = 128
-hidden_size = 128
+#128
+hidden_size = 240
 # num_layers = 1
 num_classes = 2
 batch_size = 1
-learning_rate = 0.001
+learning_rate = 0.0001
 
 def Binarize(tensor):
     # 결과물을 1과 -1 로 표현
@@ -28,9 +30,10 @@ class PacketRnn(nn.Module):
 
     def __init__(self, num_classes=2):
         super(PacketRnn, self).__init__()
-
+        self.Binarize = 1
         self.features = nn.Sequential(
             B_RNN(input_size,hidden_size),
+            StraightThroughEstimator(),
             RNNLinear(hidden_size, 1),
 
         )
@@ -42,11 +45,17 @@ class PacketRnn(nn.Module):
         for m in self.modules():
             if isinstance(m, RNN):
                 #nn.init.kaiming_normal_(m.weight, mode='fan_out')
-                #m.h_t = torch.autograd.Variable(torch.zeros(10, batch_size, hidden_size))
-                nn.init.kaiming_normal_(m.weight_ih_l0, mode='fan_out')
-                nn.init.kaiming_normal_(m.weight_hh_l0, mode='fan_out')
-                nn.init.kaiming_normal_(m.weight_ih_l0_org, mode='fan_out')
-                nn.init.kaiming_normal_(m.weight_hh_l0_org, mode='fan_out')
+
+                # nn.init.kaiming_normal_(m.weight_ih_l0, mode='fan_out')
+                # nn.init.kaiming_normal_(m.weight_hh_l0, mode='fan_out')
+                # nn.init.kaiming_normal_(m.weight_ih_l0_org, mode='fan_out')
+                # nn.init.kaiming_normal_(m.weight_hh_l0_org, mode='fan_out')
+
+                nn.init.uniform_(m.weight_ih_l0, a=-.5, b=.8)
+                nn.init.uniform_(m.weight_hh_l0,a=-.5, b=.8)
+                nn.init.uniform_(m.weight_ih_l0_org, a=-.5, b=.8)
+                nn.init.uniform_(m.weight_hh_l0_org, a=-.5, b=.8)
+
 
             elif isinstance(m, nn.Linear):
                 nn.init.uniform_(m.weight, a= 1., b= 1.)
@@ -57,7 +66,7 @@ class realisticRnn(nn.Module):
 
     def __init__(self, num_classes=2):
         super(realisticRnn, self).__init__()
-
+        self.Binarize = 0
         self.features = nn.Sequential(
             RNN(input_size,hidden_size),
             RNNLinear(hidden_size, 1),
@@ -72,13 +81,32 @@ class realisticRnn(nn.Module):
             if isinstance(m, RNN):
                 #nn.init.kaiming_normal_(m.weight, mode='fan_out')
                 #m.h_t = torch.autograd.Variable(torch.zeros(10, batch_size, hidden_size))
-                nn.init.kaiming_normal_(m.weight_ih_l0, mode='fan_out')
-                nn.init.kaiming_normal_(m.weight_hh_l0, mode='fan_out')
+                # nn.init.kaiming_normal_(m.weight_ih_l0, mode='fan_out')
+                # nn.init.kaiming_normal_(m.weight_hh_l0, mode='fan_out')
+                nn.init.uniform_(m.weight_ih_l0, a=-0.5, b=.5)
+                nn.init.uniform_(m.weight_hh_l0, a=-0.5, b=.5)
 
             elif isinstance(m, nn.Linear):
-                nn.init.uniform_(m.weight, a= 1., b= 1.1)
+                nn.init.uniform_(m.weight, a= 1., b= 1.)
                 nn.init.zeros_(m.bias)
         return
+
+class STEFunction(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, input):
+        return (input > 0).float()
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        return F.hardtanh(grad_output)
+
+class StraightThroughEstimator(nn.Module):
+    def __init__(self):
+        super(StraightThroughEstimator, self).__init__()
+
+    def forward(self, x):
+        x = STEFunction.apply(x)
+        return x
 
 class RNNLinear(Linear):
 
@@ -99,6 +127,7 @@ class B_RNN(RNN) :
         #self.batch_size = 1
         self.n_layers = 1
         self.sequence_length = sequence_length
+
     #weight initialize
         self.weight_ih = torch.randn((), device=device, dtype=torch.float, requires_grad=True)
         self.weight_hh = torch.randn((), device=device, dtype=torch.float, requires_grad=True)
@@ -106,8 +135,7 @@ class B_RNN(RNN) :
         self.register_buffer('weight_hh_l0_org', self.weight_hh_l0.data.clone())
 
     def forward(self, input):
-        # for self.h_t == None :
-            # self.h_t = torch.autograd.Variable(torch.zeros(1, self.hidden_size))
+
         data_ih = torch.zeros(1, hidden_size)
         data_hh = torch.zeros(1, hidden_size)
         middle = torch.zeros(1, hidden_size)
@@ -115,18 +143,20 @@ class B_RNN(RNN) :
 
         # 1과 0이던 input을 1과 -1인 형식으로 변경
         input = input_Binarize(input)
-        self.h_t = Binarize(self.h_t)
+        #self.h_t[0] = input_Binarize(h_0)
 
         self.weight_ih_l0.data = Binarize(self.weight_ih_l0_org)
         self.weight_hh_l0.data = Binarize(self.weight_hh_l0_org)
         #print("ih",self.weight_ih_l0.size())
         #print("hh",self.weight_hh_l0.size())
         for i in range(0,10):
-            data_ih = torch.matmul(input[0][i], self.weight_ih_l0)
+            #input= torch.transpose(input[0][i], 0, 1)
+            data_ih = torch.matmul(self.weight_ih_l0, input[0][i])
             data_hh = torch.matmul(self.h_t[i], self.weight_hh_l0)
             middle = data_ih + data_hh
+            self.h_t[i + 1] = middle
             #ste function?
-            self.h_t[i+1] = torch.sign(middle)
+            #self.h_t[i+1] = torch.sign(middle)
         # output = nn.sign(middle)
 
         return self.h_t[10]
@@ -137,15 +167,19 @@ class RNN(RNN) :
         #self.batch_size = 1
         self.n_layers = 1
         self.sequence_length = sequence_length
+        self.hidden_size = hidden_size
+
     #weight initialize
         self.weight_ih = torch.randn((), device=device, dtype=torch.float, requires_grad=True)
         self.weight_hh = torch.randn((), device=device, dtype=torch.float, requires_grad=True)
-        self.register_buffer('weight_ih_l0_org', self.weight_ih_l0.data.clone())
-        self.register_buffer('weight_hh_l0_org', self.weight_hh_l0.data.clone())
+
 
     def forward(self, input):
         # for self.h_t == None :
-            # self.h_t = torch.autograd.Variable(torch.zeros(1, self.hidden_size))
+        #h_0 = torch.autograd.Variable(torch.zeros(1,10, hidden_size))
+
+        # RNN = nn.RNN(input_size=input_size, hidden_size= hidden_size)
+        # output, hn = RNN(input)
         data_ih = torch.zeros(1, hidden_size)
         data_hh = torch.zeros(1, hidden_size)
         middle = torch.zeros(1, hidden_size)
@@ -153,22 +187,18 @@ class RNN(RNN) :
 
         # 1과 0이던 input을 1과 -1인 형식으로 변경
 
-        self.weight_ih_l0.data = self.weight_ih_l0_org
-        self.weight_hh_l0.data = self.weight_hh_l0_org
-        #print("ih",self.weight_ih_l0.size())
-        #print("hh",self.weight_hh_l0.size())
         for i in range(0,10):
             data_ih = torch.matmul(input[0][i], self.weight_ih_l0)
             data_hh = torch.matmul(self.h_t[i], self.weight_hh_l0)
             middle = data_ih + data_hh
             #ste function?
             self.h_t[i+1] = torch.sign(middle)
-        # output = nn.sign(middle)
 
+        # return hn[0][9]
         return self.h_t[10]
 
 class B_RNNtrainer():
-    def __init__(self, model, bit= 128, lr=0.001, device=None):
+    def __init__(self, model, bit= 128, lr= learning_rate, device=None):
         super().__init__()
         self.model = model
         self.lr = lr
@@ -179,7 +209,7 @@ class B_RNNtrainer():
         #data = torch.zeros(182000, self.bit)
         data = torch.zeros(100000, self.bit)
         target = torch.zeros(180000, 1)
-        Target=0
+
         epoch_losses = []
         epoch_loss = 0
         f = open("11label.txt", "r")
@@ -203,7 +233,7 @@ class B_RNNtrainer():
         t = 0
         for line in content:
             k = 0
-            if t ==30000 :
+            if t ==60000 :
                 break
             for i in line:
                 if i.isdigit() == True:
@@ -233,17 +263,18 @@ class B_RNNtrainer():
                 epoch_losses.append([t,epoch_loss])
                 optimizer.zero_grad()
                 loss.backward()
-
-                for p in self.model.modules():
-                    if hasattr(p, 'weight_org'):
-                        p.weight_ih_l0.data.copy_(p.weight_ih_l0_org)
-                        p.weight_hh_l0.data.copy_(p.weight_hh_l0_org)
-                optimizer.step()
-                for p in self.model.modules():
-                    if hasattr(p, 'weight_org'):
-                        p.weight_ih_l0_org.copy_(p.weight_ih_l0.data.clamp_(-1, 1))
-                        p.weight_hh_l0_org.copy_(p.weight_hh_l0.data.clamp_(-1, 1))
+                if self.model.Binarize == 1 :
+                    for p in self.model.modules():
+                        if hasattr(p, 'weight_org'):
+                            p.weight_ih_l0.data.copy_(p.weight_ih_l0_org)
+                            p.weight_hh_l0.data.copy_(p.weight_hh_l0_org)
+                    optimizer.step()
+                    for p in self.model.modules():
+                        if hasattr(p, 'weight_org'):
+                            p.weight_ih_l0_org.copy_(p.weight_ih_l0.data.clamp_(-1, 1))
+                            p.weight_hh_l0_org.copy_(p.weight_hh_l0.data.clamp_(-1, 1))
             t +=1
+
         return epoch_losses
 
 class test_RNNtrainer():
@@ -252,7 +283,7 @@ class test_RNNtrainer():
         self.model = model
 
     def test(self, test_start) :
-
+        #print(self.model.features[0].weight_ih_l0)
         accuracy = 0
         data = torch.zeros(100000, 128)
         target = torch.zeros(180000, 1)
@@ -278,7 +309,7 @@ class test_RNNtrainer():
         for line in content:
             k = 0
 
-            if t == test_start+10000:
+            if t == test_start+4000:
                 break
             for i in line:
                 if i.isdigit() == True:
@@ -294,13 +325,14 @@ class test_RNNtrainer():
                             input[0][index] = input[0][index + 1]
                     input[0][9] = data[t]
                     output = self.model(input)
-
+                    #print(output)
                     Binary_output = output.sign().div_(2).add_(0.5)
+                    #print(Binary_output)
                     # print("Binary_output", output)
                     # print("target[t]", target[t])
                     if int(Binary_output) == target[t] :
 
-                        accuracy +=0.01
+                        accuracy +=0.025
 
             t += 1
         return accuracy
@@ -329,7 +361,7 @@ if __name__ == '__main__':
 
 
     B_epoch_losses= B_RNN.train_step(optimizer)
-    epoch_losses = RNN.train_step(optimizer)
+    #epoch_losses = RNN.train_step(optimizer)
 
     # final_w_ih = model.features[0].weight_ih_l0.clone()
     # final_w_hh = model.features[0].weight_hh_l0.clone()
@@ -338,17 +370,18 @@ if __name__ == '__main__':
     RNN_final_w_hh = RNN_model.features[0].weight_hh_l0.clone()
 
     test_B_RNN = test_RNNtrainer(model)
-    test_RNN = test_RNNtrainer(RNN_model)
-    print(model.features[0].weight_ih_l0-RNN_model.features[0].weight_ih_l0)
+    #test_RNN = test_RNNtrainer(RNN_model)
 
-    accuracy = test_B_RNN.test(30000)
-    RNN_accuracy = test_B_RNN.test(30000)
+
+    # for i in range(3) :
+    accuracy = test_B_RNN.test(60000)
+        # accuracies.append(accuracy)
+    #RNN_accuracy = test_RNN.test(60000)
     #
     print("accuracy",accuracy)
-    print("RNN_accuracy",RNN_accuracy)
+    #print("RNN_accuracy",RNN_accuracy)
 
     # print(ini_w-final_w)
     # print("final_w", final_w)
-
 
 
