@@ -2,7 +2,6 @@
 import torch
 from torch.nn import Module, Conv2d, Linear
 from torch.nn.functional import linear, conv2d
-import labeling
 import torch.nn as nn
 #from torch.autograd import Variable
 import torch.autograd as autograd
@@ -42,10 +41,10 @@ class Packetbnn(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out')
-                nn.init.kaiming_normal_(m.weight_org, mode='fan_out')
-                #nn.init.uniform_(m.weight, a= .0, b= 0.7)
-                #nn.init.uniform_(m.weight_org, a=.0, b=0.7)
+                # nn.init.kaiming_normal_(m.weight, mode='fan_out')
+                # nn.init.kaiming_normal_(m.weight_org, mode='fan_out')
+                nn.init.uniform_(m.weight, a= -.2, b= 0.8)
+                nn.init.uniform_(m.weight_org, a=-.2, b=0.8)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.BatchNorm2d):
@@ -64,11 +63,12 @@ def packetbnn(num_classes=1):
     return Packetbnn(num_classes)
 
 def Binarize(tensor):
-    for i in range(0, tensor.size(dim=0)):
-        if tensor[i] == 0:
-            tensor[i] = -1
 
     return tensor.sign()
+
+def data_Binarize(tensor):
+    # 1, -1 >> 1, 0
+    return tensor.add_(1).div_(2)
 
 
 # def input_Binarize(tensor):
@@ -84,24 +84,6 @@ def input_Binarize(tensor):
     # 1과 0을 -1과 1로
     result = (tensor-0.5).sign()
     return result
-
-
-# class STEFunction(torch.autograd.Function):
-#     @staticmethod
-#     def forward(ctx, input):
-#         return (input > 0).float()
-#
-#     @staticmethod
-#     def backward(ctx, grad_output):
-#         return hardtanh(grad_output)
-#
-# class StraightThroughEstimator(nn.Module):
-#     def __init__(self):
-#         super(StraightThroughEstimator, self).__init__()
-#
-#     def forward(self, x):
-#         x = STEFunction.apply(x)
-#         return x
 
 
 class BNNLinear(Linear):
@@ -149,10 +131,11 @@ class Bnntrainer():
         self.lr = lr
         self.device = device
         self.label = torch.zeros(180000, 1)
+        self.data = torch.zeros(100000, self.bit)
 
     def train_step(self, optimizer):
         #data = torch.zeros(182000, self.bit)
-        data = torch.zeros(100000, self.bit)
+
         epoch_losses = []
         epoch_loss = 0
         input = torch.zeros(1,1,1,self.bit)
@@ -180,15 +163,16 @@ class Bnntrainer():
         t = 0
         for line in content:
             k = 0
-            if t ==50000 :
+            if t ==10000 :
                 break
             for i in line:
                 if i.isdigit() == True:
-                    data[t][k] = int(i)
+                    self.data[t][k] = int(i)
                     k += 1
 
-            input[0][0] = data[t]
-            target = torch.tensor(label[t])
+            input[0][0] = self.data[t]
+
+            target = self.label[t].clone()
             #input, target = input.to(self.device), target.to(self.device)
             output = self.model(input)
 
@@ -209,11 +193,72 @@ class Bnntrainer():
                     #p.weight_org.data.copy_(p.weight.data.clamp_(-1, 2))
                     p.weight_org.copy_(p.weight.data.clamp_(-1, 1))
             t +=1
+
         return epoch_losses
 
+    def inference(self):
+
+        f = open("final.txt", "r")
+        content = f.readlines()
+
+        t = 0
+        for line in content:
+            k = 0
+            if t ==60000 :
+                break
+            for i in line:
+                if i.isdigit() == True:
+                    self.data[t][k] = int(i)
+                    k += 1
+            t +=1
+
+
+        # f = open("weight_inference_test.txt", "r")
+        # content = f.readlines()
+        weight = torch.zeros(129,1,1,128)
+
+        accuracy = 0
+        predict = torch.zeros(1)
+        middle_result = torch.zeros(128, 128)
+        middle_result2 = torch.zeros(128)
+        middle_result3 = torch.zeros(128)
+        weight[0:128] = Binarize(self.model.features[0].weight)
+        weight[128:] = Binarize(self.model.features[1].weight)
+        print(weight)
+        weight= data_Binarize(weight)
+        print(weight)
+
+        # print(weight[121].size())
+        for t in range(50000,51000) :
+            print(t)
+            for k in range(0, 128):
+
+                middle_result[k] = XNOR(self.data[t], weight[k][0][0])
+
+                # print(self.data[t])
+                # print("weight",weight[k][0][0])
+                # print("m_r", middle_result[k])
+                middle_result2[k] = Bitcount(middle_result[k])
+                # print("m_r2",middle_result2[k])
+
+            middle_result3 = XNOR(middle_result2, weight[128][0][0])
+            middle_result3 = middle_result3.type(torch.int8)
+            print(middle_result3)
+            predict = Bitcount(middle_result3)
+            # if predict == 0:
+            #     predict -= 1
+            target = torch.tensor(self.label[t])
+            print("predict", predict)
+            print("target", target)
+            if predict == target:
+                accuracy += 0.1
+
+            t += 1
+        return accuracy
+
 def XNOR(A, B):
-    R = torch.zeros(120)
-    for i in range(0,120):
+    R = torch.zeros(128)
+    for i in range(0,128):
 
         if A[i] == 0 and B[i] == 0:
             R[i]= 1
@@ -230,7 +275,7 @@ def Bitcount(tensor):
     activation = torch.zeros(1, 1)
 
     count = torch.bincount(tensor)
-    k = torch.tensor(60)
+    k = torch.tensor(64)
     # activation
     if count.size(dim=0) == 1:
         activation = torch.tensor([[0.]])
@@ -240,68 +285,7 @@ def Bitcount(tensor):
         activation = torch.tensor([[0.]])
     return activation
 
-def inference(model):
-    #test 함수
-    data = torch.zeros(200000,128)
 
-    f = open("final.txt", "r")
-    content = f.readlines()
-    # t means packet sequence
-
-    t = 0
-    for line in content:
-        k = 0
-        for i in line:
-            if i.isdigit() == True:
-                data[t][k] = int(i)
-                k += 1
-        t += 1
-
-    # f = open("weight_inference_test.txt", "r")
-    # content = f.readlines()
-    #weight = torch.zeros(121,120)
-
-    accuracy = 0
-    predict = torch.zeros(1)
-    middle_result = torch.zeros(120,120)
-    middle_result2 = torch.zeros(120)
-    middle_result3 = torch.zeros(120)
-
-    weight = Binarize(model.features[0].weight)
-    weight[120] = Binarize(model.features[1].weight)
-
-    t = 0
-    for line in content:
-        k = 0
-        if t == 50000 + 20000:
-            break
-        for i in line:
-            if i.isdigit() == True:
-                data[t][k] = int(i)
-                k += 1
-
-        if t >= 50000:
-            #10개중 5개이상 malicous인지 파악
-            #for k in range(0,120) :
-            for k in range(0, 120):
-                middle_result[k] = XNOR(data[t] , weight[k])
-                #print("m_r", middle_result[k])
-                middle_result2[k] = Bitcount(middle_result[k])
-                #print("m_r2",middle_result2[k])
-
-            middle_result3 = XNOR(middle_result2, weight[120])
-            middle_result3 = middle_result3.type(torch.int8)
-            print(middle_result3)
-            predict =Bitcount(middle_result3)
-            if predict == 0 :
-                predict -= 1
-            target = torch.tensor(label[t])
-            print("predict",predict )
-            print("target", target)
-            if predict == target :
-                accuracy+= 1
-        t += 1
-    return accuracy
 
 
 if __name__ == '__main__':
@@ -327,24 +311,19 @@ if __name__ == '__main__':
     # ini_weight = Packetbnn.features[0].weight.clone()
     # ini_weight_org = Packetbnn.features[0].weight_org.clone()
     epoch_losses= Bnn.train_step(optimizer)
-    b = []
-    c = []
-    # for i in epoch_losses:
-    #     k = 0
-    #     if k%100 == 0 :
-    #         b.append(i[0])
-    #         c.append(i[1])
-    #     k +=1
+    accuracy = Bnn.inference()
+    print(accuracy)
+
 
     # fig, ax = plt.subplots(1, 1)
     # ax.plot(b, c, 'k', 9, label='bnn_loss sum')
     # plt.show()
-    final_weight = Packetbnn.features[0].weight
-    final_weight_org = Packetbnn.features[0].weight_org
-
-    print(ini_weight[0])
-    print(final_weight[0])
-    print(ini_weight[0]-final_weight[0])
+    # final_weight = Packetbnn.features[0].weight
+    # final_weight_org = Packetbnn.features[0].weight_org
+    #
+    # print(ini_weight[0])
+    # print(final_weight[0])
+    # print(ini_weight[0]-final_weight[0])
     #
     # print(ini_weight_org[0])
     # print(final_weight_org[0])
