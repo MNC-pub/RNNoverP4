@@ -43,8 +43,8 @@ class Packetbnn(nn.Module):
             if isinstance(m, nn.Conv2d):
                 # nn.init.kaiming_normal_(m.weight, mode='fan_out')
                 # nn.init.kaiming_normal_(m.weight_org, mode='fan_out')
-                nn.init.uniform_(m.weight, a= -.2, b= 0.8)
-                nn.init.uniform_(m.weight_org, a=-.2, b=0.8)
+                nn.init.uniform_(m.weight, a= -.5, b= 0.5)
+                nn.init.uniform_(m.weight_org, a=-.5, b=0.5)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.BatchNorm2d):
@@ -81,7 +81,7 @@ def data_Binarize(tensor):
 #     return tensor
 
 def input_Binarize(tensor):
-    # 1과 0을 -1과 1로
+    # 1과 0을 1과 -1로
     result = (tensor-0.5).sign()
     return result
 
@@ -124,7 +124,7 @@ class BNNConv2d(Conv2d):
         return out
 
 class Bnntrainer():
-    def __init__(self, model, bit, lr=0.001, device=None):
+    def __init__(self, model, bit, lr , device=None):
         super().__init__()
         self.model = model
         self.bit = bit
@@ -163,7 +163,7 @@ class Bnntrainer():
         t = 0
         for line in content:
             k = 0
-            if t ==10000 :
+            if t ==50000 :
                 break
             for i in line:
                 if i.isdigit() == True:
@@ -275,7 +275,7 @@ def Bitcount(tensor):
     activation = torch.zeros(1, 1)
 
     count = torch.bincount(tensor)
-    k = torch.tensor(64)
+    k = torch.tensor(60)
     # activation
     if count.size(dim=0) == 1:
         activation = torch.tensor([[0.]])
@@ -306,13 +306,44 @@ if __name__ == '__main__':
 
     # sample input
 
-    Bnn = Bnntrainer(Packetbnn, bit=128, device='cuda')
-    optimizer = torch.optim.Adam(Packetbnn.parameters(), lr=0.002, weight_decay=1e-7)
+    Bnn = Bnntrainer(Packetbnn, bit=128, lr=0.01,device='cuda')
+    optimizer = torch.optim.Adam(Packetbnn.parameters(), weight_decay=1e-7)
     # ini_weight = Packetbnn.features[0].weight.clone()
     # ini_weight_org = Packetbnn.features[0].weight_org.clone()
     epoch_losses= Bnn.train_step(optimizer)
-    accuracy = Bnn.inference()
-    print(accuracy)
+    #accuracy = Bnn.inference()
+    # sys.stdout = open('weight.txt', 'w')
+    # print(Binarize(Packetbnn.features[0].weight).byte())
+    # print(Binarize(Packetbnn.features[4].weight).byte())
+    # print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
+    # print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
+
+    # A= Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int()
+    # B= Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int()
+
+    A = torch.zeros(200,128)
+
+    f = open('weight.txt', "r")
+    content = f.readlines()
+
+    t = 0
+    for line in content:
+        k = 0
+        if t%3 == 0:
+            for i in line:
+                if i.isdigit() == True:
+                    if t == 0:
+                        A[0][k] = int(i)
+                        k += 1
+                    else:
+                        T = int(t / 3)
+                        A[T][k] = int(i)
+                        k += 1
+        t += 1
+    sys.stdout = open('weight_final.txt', 'w')
+    print(A)
+
+
 
 
     # fig, ax = plt.subplots(1, 1)
