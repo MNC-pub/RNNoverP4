@@ -10,7 +10,7 @@ import sys
 from matplotlib import pyplot as plt
 
 sequence_length = 1
-input_size = 128
+input_size = 126
 #128
 hidden_size = 240
 # num_layers = 1
@@ -383,5 +383,4 @@ if __name__ == '__main__':
 
     # print(ini_w-final_w)
     # print("final_w", final_w)
-
 
