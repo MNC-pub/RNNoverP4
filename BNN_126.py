@@ -12,13 +12,13 @@ __all__ = ['packetbnn']
 
 class Packetbnn(nn.Module):
 
-    def __init__(self, num_classes=1):
+    def __init__(self, bit):
         super(Packetbnn, self).__init__()
-
+        self.bit = bit
         self.features = nn.Sequential(
 
-            BNNConv2d(1, 128, kernel_size=(1,128), stride=1, padding=0),
-            nn.GroupNorm(1,128),
+            BNNConv2d(1, bit, kernel_size=(1,bit), stride=1, padding=0),
+            nn.GroupNorm(1,bit),
             # BNNConv2d(1, 120, kernel_size=(1, 120), stride=1, padding=0),
             # nn.GroupNorm(1, 120),
             # BNNConv2d(1, 120, kernel_size=(1, 120), stride=1, padding=0),
@@ -28,7 +28,7 @@ class Packetbnn(nn.Module):
             nn.Softsign(),
 
             nn.Flatten(),
-            BNNLinear(128, 1),
+            BNNLinear(bit, 1),
 
         )
 
@@ -156,7 +156,7 @@ class Bnntrainer():
                     # target[label_Index] = torch.tensor(int(i))
                     label_Index += 1
 
-        f = open("final.txt", "r")
+        f = open("final_0322.txt", "r")
         content = f.readlines()
         #t means packet sequence
         data_target = [[]]
@@ -198,7 +198,7 @@ class Bnntrainer():
 
     def inference(self):
 
-        f = open("final.txt", "r")
+        f = open("final_0322.txt", "r")
         content = f.readlines()
 
         t = 0
@@ -215,15 +215,15 @@ class Bnntrainer():
 
         # f = open("weight_inference_test.txt", "r")
         # content = f.readlines()
-        weight = torch.zeros(129,1,1,128)
+        weight = torch.zeros(self.bit +1 ,1,1,self.bit)
 
         accuracy = 0
         predict = torch.zeros(1)
-        middle_result = torch.zeros(128, 128)
-        middle_result2 = torch.zeros(128)
-        middle_result3 = torch.zeros(128)
-        weight[0:128] = Binarize(self.model.features[0].weight)
-        weight[128:] = Binarize(self.model.features[1].weight)
+        middle_result = torch.zeros(self.bit, self.bit)
+        middle_result2 = torch.zeros(self.bit)
+        middle_result3 = torch.zeros(self.bit)
+        weight[0:self.bit] = Binarize(self.model.features[0].weight)
+        weight[self.bit:] = Binarize(self.model.features[1].weight)
         print(weight)
         weight= data_Binarize(weight)
         print(weight)
@@ -231,9 +231,9 @@ class Bnntrainer():
         # print(weight[121].size())
         for t in range(50000,51000) :
             print(t)
-            for k in range(0, 128):
+            for k in range(0, self.bit):
 
-                middle_result[k] = XNOR(self.data[t], weight[k][0][0])
+                middle_result[k] = XNOR(self.data[t], weight[k][0][0], self.bit)
 
                 # print(self.data[t])
                 # print("weight",weight[k][0][0])
@@ -241,7 +241,7 @@ class Bnntrainer():
                 middle_result2[k] = Bitcount(middle_result[k])
                 # print("m_r2",middle_result2[k])
 
-            middle_result3 = XNOR(middle_result2, weight[128][0][0])
+            middle_result3 = XNOR(middle_result2, weight[self.bit][0][0], self.bit)
             middle_result3 = middle_result3.type(torch.int8)
             print(middle_result3)
             predict = Bitcount(middle_result3)
@@ -256,9 +256,9 @@ class Bnntrainer():
             t += 1
         return accuracy
 
-def XNOR(A, B):
-    R = torch.zeros(128)
-    for i in range(0,128):
+def XNOR(A, B, bit):
+    R = torch.zeros(bit)
+    for i in range(0,bit):
 
         if A[i] == 0 and B[i] == 0:
             R[i]= 1
@@ -275,7 +275,7 @@ def Bitcount(tensor):
     activation = torch.zeros(1, 1)
 
     count = torch.bincount(tensor)
-    k = torch.tensor(60)
+    k = torch.tensor(63)
     # activation
     if count.size(dim=0) == 1:
         activation = torch.tensor([[0.]])
@@ -298,7 +298,7 @@ if __name__ == '__main__':
     # device = torch.device('cuda' if cuda else 'cpu')
     device = torch.device('cpu')
     # print(device)
-    Packetbnn = packetbnn()
+    Packetbnn = Packetbnn(bit = 126)
     # model = eval("packetbnn")()
     # model.to(device)
     Packetbnn.to(device)
@@ -306,42 +306,46 @@ if __name__ == '__main__':
 
     # sample input
 
-    Bnn = Bnntrainer(Packetbnn, bit=128, lr=0.01,device='cuda')
+    Bnn = Bnntrainer(Packetbnn, bit=126, lr=0.01,device='cuda')
     optimizer = torch.optim.Adam(Packetbnn.parameters(), weight_decay=1e-7)
     # ini_weight = Packetbnn.features[0].weight.clone()
     # ini_weight_org = Packetbnn.features[0].weight_org.clone()
     epoch_losses= Bnn.train_step(optimizer)
     #accuracy = Bnn.inference()
-    # sys.stdout = open('weight.txt', 'w')
+    sys.stdout = open('weight.txt', 'w')
     # print(Binarize(Packetbnn.features[0].weight).byte())
     # print(Binarize(Packetbnn.features[4].weight).byte())
-    # print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
+    print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
     # print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
 
     # A= Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int()
     # B= Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int()
 
-    A = torch.zeros(200,128)
+    A = torch.zeros(200,126)
 
     f = open('weight.txt', "r")
     content = f.readlines()
+    # print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
 
+    sys.stdout = open('weight_final.txt', 'w')
     t = 0
     for line in content:
         k = 0
-        if t%3 == 0:
+        if t % 3 == 0:
             for i in line:
                 if i.isdigit() == True:
                     if t == 0:
-                        A[0][k] = int(i)
+                        # A[0][k] = int(i)
+                        print(int(i), end='')
                         k += 1
                     else:
                         T = int(t / 3)
-                        A[T][k] = int(i)
+                        # A[T][k] = int(i)
+                        print(int(i), end='')
                         k += 1
+            print("")
         t += 1
-    sys.stdout = open('weight_final.txt', 'w')
-    print(A)
+
 
 
 
