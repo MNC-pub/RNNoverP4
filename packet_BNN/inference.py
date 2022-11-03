@@ -1,29 +1,45 @@
 import torch
+
 import labeling
-from torch.nn.functional import linear, conv2d
+import sys
+
+global true_positive  # TP
+global false_negative  # FN
+global false_positive  # FP
+global tos_count_1
+global tos_count_0
 
 
+# def XNOR(A, B):
+#     R = torch.zeros(126)
+#     for i in range(0,126):
+#
+#         if A[i] == 0 and B[i] == 0:
+#             R[i]= 1
+#         if A[i]  == 0 and B[i] == 1:
+#             R[i]= 0
+#         if A[i]  == 1 and B[i] == 0:
+#             R[i]= 0
+#         if A[i]  == 1 and B[i] == 1:
+#             R[i] = 1
+#     return R
 
 def XNOR(A, B):
-    R = torch.zeros(120)
-    for i in range(0,120):
-
-        if A[i] == 0 and B[i] == 0:
-            R[i]= 1
-        if A[i]  == 0 and B[i] == 1:
-            R[i]= 0
-        if A[i]  == 1 and B[i] == 0:
-            R[i]= 0
-        if A[i]  == 1 and B[i] == 1:
+    R = torch.zeros(126)
+    for i in range(0,126):
+        if (A[i] == B[i]) :
             R[i] = 1
+        else :
+            R[i] = 0
     return R
+
 
 def Bitcount(tensor):
     tensor = tensor.type(torch.int8)
     activation = torch.zeros(1, 1)
 
     count = torch.bincount(tensor)
-    k = torch.tensor(60)
+    k = torch.tensor(63)
     # activation
     if count.size(dim=0) == 1:
         activation = torch.tensor([[0.]])
@@ -34,68 +50,113 @@ def Bitcount(tensor):
     return activation
 
 def inference():
-    data = torch.zeros(12000,120)
-    label = labeling.label()
+    data = torch.zeros(11000,126)
+    label = torch.zeros(19000, 1)
 
-    f = open("output_test.txt", "r")
+    f = open("20220403.txt", "r")
+    content = f.readlines()
+    data_Index = 0
+    q = 0
+    for line in content:
+        w = 0
+        if q == 10000:
+            break
+        for i in line:
+            if i.isdigit() == True:
+                data[q][w] = int(i)
+                w += 1
+        q += 1
+
+    # sys.stdout = open('data.txt', 'w')
+    # for t in range(126):
+    #     print(data[t],sep='\n')
+
+    target = labeling.label()
+
+    # f = open("bnn_label.txt", "r")
+    # content = f.readlines()
+    # label_Index = 0
+    # for line in content:
+    #     for i in line:
+    #         if i.isdigit() == True:
+    #             # if i == 0 :
+    #             #     target[label_Index][0] = torch.tensor(int(i))
+    #             # elif i == 1:
+    #             #     target[label_Index][1] = torch.tensor(int(i))
+    #             label[label_Index] = torch.tensor(int(i))
+    #             # target[label_Index] = torch.tensor(int(i))
+    #             label_Index += 1
+
+    weight = torch.zeros(127,126)
+
+    f = open("weight_final_bnn.txt", "r")
     content = f.readlines()
     # t means packet sequence
-
     t = 0
     for line in content:
         k = 0
         for i in line:
             if i.isdigit() == True:
-                data[t][k] = int(i)
+                weight[t][k] = int(i)
                 k += 1
         t += 1
+    # torch.set_printoptions(threshold=50000)
+    # torch.set_printoptions(linewidth=20000)
 
-    f = open("weight_inference_test.txt", "r")
-    content = f.readlines()
-    weight = torch.zeros(121,120)
+    #weight 제대로 들어갔는지 확인하느 ㄴ코드
+    # sys.stdout = open('bnn_weight.txt', 'w')
+    # for t in range(126):
+    #     print(weight[t],sep='\n')
 
-    t = 0
-    for line in content:
-        k = 0
-        if t%3 == 0:
-            for i in line:
-                if i.isdigit() == True:
-                    if t ==0 :
-                        weight[0][k] = int(i)
-                        k += 1
-                    else :
-                        T = int(t/3)
-                        weight[T][k] = int(i)
-                        k += 1
-
-        t += 1
-
-    torch.set_printoptions(threshold=50000)
-    torch.set_printoptions(linewidth=20000)
-
-    print(weight)
-    accuracy = 0
     predict = torch.zeros(1)
-    middle_result = torch.zeros(120,120)
-    middle_result2 = torch.zeros(120)
-    middle_result3 = torch.zeros(120)
-    label = labeling.label()
-    for z in range(5000,5300) :
-        print(z)
-        #for k in range(0,120) :
-        for k in range(0, 120):
-            middle_result[k] = XNOR(data[z] , weight[k])
-            #print(middle_result[k])
-            middle_result2[k] = Bitcount(middle_result[k])
-            #print(middle_result2[k])
-        middle_result3 = middle_result2 * weight[120]
-        #print(middle_result3)
-        predict = Bitcount(middle_result3)
-        target = torch.tensor(label[z])
-        print("predict",predict )
-        print("target", target)
-        if predict == target :
-            accuracy+= 1
-    return accuracy
+    middle_result = torch.zeros(126,126)
+    middle_result2 = torch.zeros(126)
+    middle_result3 = torch.zeros(126)
 
-print(inference())
+    true_positive = 0
+    false_positive = 0
+    false_negative = 0
+    total1 = 0
+    total2 = 0
+    tos_count_1 = 0
+    tos_count_0 = 0
+
+    for z in range(0,10000) :
+        print(z)
+
+        for k in range(0, 126):
+            middle_result[k] = XNOR(data[z] , weight[k])
+
+            middle_result2[k] = Bitcount(middle_result[k])
+        # print(middle_result)
+        # print(middle_result2)
+        middle_result3 = XNOR(middle_result2, weight[126])
+        middle_result3 = middle_result3.type(torch.int8)
+        # print(middle_result3)
+        predict =Bitcount(middle_result3)
+        predict = predict.type(torch.int8)
+        #print(predict)
+        #print(target[z])
+        if predict == 0 :
+            if target[z] == -1 :
+                true_positive = true_positive + 1
+            if target[z] == 1 :
+                false_positive = false_positive + 1
+        else :
+            if target[z] == -1:
+                false_negative = false_negative + 1
+
+    total1 = true_positive + false_negative
+    total2 = true_positive + false_positive
+    if (total1 != 0 and total2 != 0):
+        recall = float(true_positive) / float(total1)
+        precision = float(true_positive) / float(total2)
+        f1score = 2.0 / float(1 / precision + 1 / recall)
+    else:
+        recall = 0
+        f1score = 0
+
+    print("TP : {}, FP : {}, FN : {}, recall rate : {},  f1score : {}".format(
+        true_positive, false_positive, false_negative, recall, f1score))
+
+inference()
