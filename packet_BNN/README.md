@@ -1,4 +1,4 @@
-#BNN for Packet classification
+#BNN for Packet classification #
 
 Binary data used for training is packets extracted from DARPA 1998 intrusiong dataset.
 
@@ -9,7 +9,7 @@ Approximately 180,000 packets are used in dataset.
 1. This python file is tested in python 3.9 version.
 2. Also, you need to have pytorch install in python. 
 
-##BNN Weight creation
+### BNN Weight creation
 
 1. change settings for weight variation.
 - change learning rate, training packet data size in line 191.
