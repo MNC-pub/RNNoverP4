@@ -1,25 +1,30 @@
+#malicious한 IP로 왔는지 source를 대조
 import torch
-import torch.nn as nn
 from torch.nn import Module, Conv2d, Linear
 from torch.nn.functional import linear, conv2d
-from torch.autograd import Variable
+import torch.nn as nn
+#from torch.autograd import Variable
+import torch.autograd as autograd
+import sys
+from matplotlib import pyplot as plt
+# import inference
 import labeling
+__all__ = ['packetbnn']
+
 class Packetbnn(nn.Module):
 
-    def __init__(self, num_classes=1):
+    def __init__(self, bit):
         super(Packetbnn, self).__init__()
-
+        self.bit = bit
         self.features = nn.Sequential(
 
-            BNNConv2d(1, 120, kernel_size=(1,120), stride=1, padding=0, bias=False),
-            nn.BatchNorm2d(120),
+            BNNConv2d(1, bit, kernel_size=(1,bit), stride=1, padding=0),
+            nn.GroupNorm(1,bit),
             nn.Softsign(),
 
             nn.Flatten(),
-            nn.BatchNorm1d(120),
-            BNNLinear(120, 1),
-            nn.BatchNorm1d(num_classes, affine=False),
-            #nn.LogSoftmax(dim=1),
+            BNNLinear(bit, 1),
+
         )
 
     def forward(self, x):
@@ -29,49 +34,51 @@ class Packetbnn(nn.Module):
         # weight initialization
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                #nn.init.kaiming_normal_(m.weight, mode='fan_out')
-                nn.init.uniform_(m.weight, a= 0., b= 1.)
+                # nn.init.kaiming_normal_(m.weight, mode='fan_out')
+                # nn.init.kaiming_normal_(m.weight_org, mode='fan_out')
+                nn.init.uniform_(m.weight, a= -.5, b= 0.5)
+                nn.init.uniform_(m.weight_org, a=-.5, b=0.5)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.GroupNorm):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0.5, 0.01)
+                nn.init.uniform_(m.weight, a= 1., b= 1.)
+                #nn.init.normal_(m.weight, 0, 0.01)
                 nn.init.zeros_(m.bias)
         return
 
+def packetbnn(num_classes=1):
+    return Packetbnn(num_classes)
 
-__all__ = ['BNNLinear', 'BNNConv2d']
+def Binarize(tensor):
+    return tensor.sign()
 
+def data_Binarize(tensor):
+    # 1, -1 >> 1, 0
+    return tensor.add_(1).div_(2)
 
-def Binarize(tensor, quant_mode='det'):
-    if quant_mode == 'det':
-        result = (tensor-0.5).sign().add_(1).div_(2)
-        return result
-    if quant_mode == 'bin':
-        return (tensor >= 0).type(type(tensor)) * 2 - 1
-    else:
-        return tensor.add_(1).div_(2).add_(torch.rand(tensor.size()).add(-0.5)).clamp_(0, 1).round().mul_(2).add_(-1)
+def input_Binarize(tensor):
+    # 1과 0을 1과 -1로
+    result = (tensor-0.5).sign()
+    return result
 
 
 class BNNLinear(Linear):
 
     def __init__(self, *kargs, **kwargs):
         super(BNNLinear, self).__init__(*kargs, **kwargs)
-        self.register_buffer('weight_org', self.weight.data.clone())
 
     def forward(self, input):
 
-        # #if (input.size(1) != 784) and (input.size(1) != 3072):
-        # input.data = Binarize(input.data)
-
-        # self.weight.data = Binarize(self.weight_org)
-        out = linear(input, self.weight.data)
-
-        # if not self.bias is None:
-        #     self.bias.org = self.bias.data.clone()
-        #     out += self.bias.view(1, -1).expand_as(out)
+        out = linear(input, self.weight)
+        if not self.bias is None:
+            self.bias.org=self.bias.data.clone()
+            out += self.bias.view(1, -1).expand_as(out)
 
         return out
 
@@ -84,115 +91,139 @@ class BNNConv2d(Conv2d):
 
     def forward(self, input):
 
-        # input.data = Binarize(input.data)
-        #
-        # self.weight.data = Binarize(self.weight_org)
+        input.data = input_Binarize(input.data)
+
+        self.weight.data = Binarize(self.weight_org)
+
 
         out = conv2d(input, self.weight.data, None, self.stride,
                      self.padding, self.dilation, self.groups)
 
-        # if not self.bias is None:
-        #     self.bias.org = self.bias.data.clone()
-        #     out += self.bias.view(1, -1, 1, 1).expand_as(out)
+        if not self.bias is None:
+            self.bias.org=self.bias.data.clone()
+            out += self.bias.view(1, -1, 1, 1).expand_as(out)
 
         return out
 
+class Bnntrainer():
+    def __init__(self, model, bit, lr , device=None):
+        super().__init__()
+        self.model = model
+        self.bit = bit
+        self.lr = lr
+        self.device = device
+        self.label = torch.zeros(19000, 1)
+        self.data = torch.zeros(19000, self.bit)
 
-torch.set_printoptions(threshold=50000)
-torch.set_printoptions(linewidth=20000)
-#(1,5) 크기의 3개의 패킷
-losses = []
-label = labeling.label()
-#input = torch.randn((2,1,1,5), requires_grad=True)
-# input = torch.tensor([[[[0., 0., 1., 1., 0.]]],
-#
-#                       [[[1., 0., 0., 0., 0.]]],
-#
-#                       [[[1., 0., 0., 1., 1.]]]])
-# input = torch.tensor([[[[0., 0., 1., 1., 0.]]]])
-bnn = Packetbnn()
-bnn.init_w()
+    def train_step(self, optimizer):
+        #data = torch.zeros(182000, self.bit)
+        epoch_losses = []
+        epoch_loss = 0
+        input = torch.zeros(1,1,1,self.bit)
+        self.label = labeling.label()
+        #training data
+        f = open("20220403.txt", "r")
+        content = f.readlines()
+        #t means packet sequence
+        data_target = [[]]
+        t = 0
+        for line in content:
+            k = 0
+            if t ==18900 :
+                break
+            for i in line:
+                if i.isdigit() == True:
+                    self.data[t][k] = int(i)
+                    k += 1
 
-data = torch.zeros(8000, 120)
-losses = []
-input = torch.zeros(1, 1, 1, 120)
-f = open("output_test.txt", "r")
-content = f.readlines()
-# t means packet sequence
-optimizer = torch.optim.Adam(bnn.parameters(), lr=0.005, weight_decay=1e-5)
-t = 0
-label = labeling.label()
-for line in content:
-    k= 0
-    for i in line:
-        if i.isdigit() == True:
-            data[t][k] = int(i)
-            k += 1
-    t += 1
-    input[0][0] = data[t]
-    output = bnn(input)
-    target = torch.tensor(label[t])
-    loss = (output-target).pow(2).sum()
-    loss = Variable(loss, requires_grad=True)
-    losses.append(loss.item())
+            input[0][0] = self.data[t]
+            target = self.label[t]
+            output = self.model(input)
+            loss = (output-target).pow(2).sum()
+            loss = autograd.Variable(loss, requires_grad=True)
+            epoch_loss +=loss.item()
+            epoch_losses.append([t,epoch_loss])
+            optimizer.zero_grad()
+            loss.backward()
 
-    optimizer.zero_grad()
-    loss.backward()
-    for p in bnn.modules():
-        if hasattr(p, 'weight_org'):
-            p.weight.data.copy_(p.weight_org)
-    optimizer.step()
-    for p in bnn.modules():
-        if hasattr(p, 'weight_org'):
-            p.weight_org.data.copy_(p.weight.data.clamp_(-1, 2))
-    if t%10 ==0 :
-        print(losses[t])
+            for p in self.model.modules():
+                if hasattr(p, 'weight_org'):
+                    p.weight.data.copy_(p.weight_org)
+            optimizer.step()
+            for p in self.model.modules():
+                if hasattr(p, 'weight_org'):
+                    p.weight_org.copy_(p.weight.data.clamp_(-1, 1))
+            t +=1
+
+        return epoch_losses
 
 
-# print(k.features[0].weight)
-print(bnn.features[0].weight)
-print(bnn.features[2].weight)
+def Bitcount(tensor):
+    tensor = tensor.type(torch.int8)
+    activation = torch.zeros(1, 1)
 
-print(Binarize(bnn.features[0].weight))
-print(Binarize(bnn.features[2].weight))
-print(torch.cuda.is_available())
-# a = torch.tensor([[[[-0.1980,  0.0351, -0.4719,  0.6720,  1.2105]]]])
-# filter = torch.tensor([[[[-1.0145,  0.0434,  0.1013,  0.2565,  0.1284]]],
-#
-#
-#         [[[-0.4041,  0.2468, -0.0881, -0.0285, -0.0488]]],
-#
-#
-#         [[[-0.3031, -0.1127, -0.2771, -0.2324, -0.0808]]],
-#
-#
-#         [[[-0.1816,  0.2063, -0.1439,  0.0060, -0.1139]]],
-#
-#
-#         [[[-0.5576, -0.0296,  0.0776,  0.6105,  0.0445]]]], requires_grad=True)
-#
-# out = conv2d(a, filter, None)
-# out = linear(input, self.weight)
-# print(out)
+    count = torch.bincount(tensor)
+    k = torch.tensor(63)
+    # activation
+    if count.size(dim=0) == 1:
+        activation = torch.tensor([[0.]])
+    elif count[1] > k:
+        activation = torch.tensor([[1.]])
+    else:
+        activation = torch.tensor([[0.]])
+    return activation
 
 
 
-# loss = nn.CrossEntropyLoss()
-# input = torch.randn(3, 5, requires_grad=True)
-# print(input)
-# learning_rate = 1e-6
-# target = torch.empty(3, dtype=torch.long).random_(5)
-# print(target)
 
-# for t in range(2000):
-#
-#     output = loss(input, target)
-#     if t % 100 == 1:
-#         print(t, output)
-#
-#     output.backward()
-#     with torch.no_grad():
-#         input -= learning_rate * input.grad
-#     input.grad = None
-#
-# print(input)
+if __name__ == '__main__':
+    #data load
+    # f = open("output.txt", "r")
+    # content = f.readlines()
+    torch.set_printoptions(threshold=50000)
+    torch.set_printoptions(linewidth=20000)
+    device = torch.device('cpu')
+
+    #bit default는 126
+    Packetbnn = Packetbnn(bit = 126)
+    Packetbnn.to(device)
+    Packetbnn.init_w()
+
+    Bnn = Bnntrainer(Packetbnn, bit=126, lr=0.002, device='cuda')
+    optimizer = torch.optim.Adam(Packetbnn.parameters(), weight_decay=1e-7)
+    epoch_losses= Bnn.train_step(optimizer)
+
+    sys.stdout = open('weight.txt', 'w')
+    #packet bnn nnlayer 중 Conv2d layer의 weight를 binarize 한후
+    #weight.txt에 저장
+    print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
+
+    #packet bnn nnlayer 중 linear layer의 weight를 의미
+    print(Binarize(Packetbnn.features[4].weight).add_(1).div_(2).int())
+
+
+    #A = torch.zeros(200,126)
+
+    #사용하기 쉽도록 weight.txt 파일에서 의미없는 글자나 띄워쓰기를 제거하는 과정
+    f = open('weight.txt', "r")
+    content = f.readlines()
+    sys.stdout = open('weight_final_bnn.txt', 'w')
+    t = 0
+    for line in content:
+        k = 0
+        if t % 3 == 0:
+            for i in line:
+                if i.isdigit() == True:
+                    if t == 0:
+                        # A[0][k] = int(i)
+                        print(int(i), end='')
+                        k += 1
+                    else:
+                        T = int(t / 3)
+                        # A[T][k] = int(i)
+                        print(int(i), end='')
+                        k += 1
+            print("")
+        t += 1
+
+
