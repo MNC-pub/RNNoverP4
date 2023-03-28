@@ -13,7 +13,7 @@ Approximately 180,000 packets are used in dataset.
 
 1. change settings for weight variation.
 - change learning rate, training packet data size in line 191.
-- 20,000 packets are used for training in default.
+- 10,000 packets are used for training in default.
 
 2. run python file "packet_BNN.py"
 - weights of Conv2d layer and linear layer are extracted in "weight.txt"
