@@ -49,11 +49,11 @@ def Bitcount(tensor):
         activation = torch.tensor([[0.]])
     return activation
 
-def inference():
+def inference(packets):
     data = torch.zeros(11000,126)
     label = torch.zeros(19000, 1)
 
-    f = open("20220403.txt", "r")
+    f = open("BNN_dataset.txt", "r")
     content = f.readlines()
     data_Index = 0
     q = 0
@@ -67,26 +67,7 @@ def inference():
                 w += 1
         q += 1
 
-    # sys.stdout = open('data.txt', 'w')
-    # for t in range(126):
-    #     print(data[t],sep='\n')
-
     target = labeling.label()
-
-    # f = open("bnn_label.txt", "r")
-    # content = f.readlines()
-    # label_Index = 0
-    # for line in content:
-    #     for i in line:
-    #         if i.isdigit() == True:
-    #             # if i == 0 :
-    #             #     target[label_Index][0] = torch.tensor(int(i))
-    #             # elif i == 1:
-    #             #     target[label_Index][1] = torch.tensor(int(i))
-    #             label[label_Index] = torch.tensor(int(i))
-    #             # target[label_Index] = torch.tensor(int(i))
-    #             label_Index += 1
-
     weight = torch.zeros(127,126)
 
     f = open("weight_final_bnn.txt", "r")
@@ -121,8 +102,8 @@ def inference():
     tos_count_1 = 0
     tos_count_0 = 0
 
-    for z in range(0,10000) :
-        print(z)
+    for z in range(10000,10000+packets) :
+        print(z-10000)
 
         for k in range(0, 126):
             middle_result[k] = XNOR(data[z] , weight[k])
@@ -159,4 +140,5 @@ def inference():
     print("TP : {}, FP : {}, FN : {}, recall rate : {},  f1score : {}".format(
         true_positive, false_positive, false_negative, recall, f1score))
 
-inference()
+
+inference(packets=1000)
