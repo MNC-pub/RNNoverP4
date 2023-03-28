@@ -1,4 +1,4 @@
-#BNN for Packet classification #
+# BNN for Packet classification#
 
 Binary data used for training is packets extracted from DARPA 1998 intrusiong dataset.
 
