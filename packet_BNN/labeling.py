@@ -20,8 +20,8 @@ def label():
     m_count = 0
     count = 0
 
-    label = np.zeros(18900)
-    f = open("20220403.txt", "r")
+    label = np.zeros(20001)
+    f = open("BNN_dataset.txt", "r")
 
     content = f.readlines()
     for seq in range(0,18900):
