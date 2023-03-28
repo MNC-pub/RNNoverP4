@@ -106,14 +106,15 @@ class BNNConv2d(Conv2d):
         return out
 
 class Bnntrainer():
-    def __init__(self, model, bit, lr , device=None):
+    def __init__(self, model, bit, lr , packets,  device=None):
         super().__init__()
         self.model = model
         self.bit = bit
         self.lr = lr
         self.device = device
-        self.label = torch.zeros(19000, 1)
-        self.data = torch.zeros(19000, self.bit)
+        self.packets = packets
+        self.label = torch.zeros(packets, 1)
+        self.data = torch.zeros(packets, self.bit)
 
     def train_step(self, optimizer):
         #data = torch.zeros(182000, self.bit)
@@ -122,14 +123,14 @@ class Bnntrainer():
         input = torch.zeros(1,1,1,self.bit)
         self.label = labeling.label()
         #training data
-        f = open("20220403.txt", "r")
+        f = open("BNN_dataset.txt", "r")
         content = f.readlines()
         #t means packet sequence
         data_target = [[]]
         t = 0
         for line in content:
             k = 0
-            if t ==18900 :
+            if t ==(self.packets-1) :
                 break
             for i in line:
                 if i.isdigit() == True:
@@ -174,8 +175,6 @@ def Bitcount(tensor):
     return activation
 
 
-
-
 if __name__ == '__main__':
     #data load
     # f = open("output.txt", "r")
@@ -189,7 +188,7 @@ if __name__ == '__main__':
     Packetbnn.to(device)
     Packetbnn.init_w()
 
-    Bnn = Bnntrainer(Packetbnn, bit=126, lr=0.002, device='cuda')
+    Bnn = Bnntrainer(Packetbnn, bit=126, lr=0.002, packets= 10000, device='cuda')
     optimizer = torch.optim.Adam(Packetbnn.parameters(), weight_decay=1e-7)
     epoch_losses= Bnn.train_step(optimizer)
 
