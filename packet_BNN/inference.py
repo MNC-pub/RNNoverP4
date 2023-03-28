@@ -51,7 +51,7 @@ def Bitcount(tensor):
 
 def inference(packets):
     data = torch.zeros(11000,126)
-    label = torch.zeros(19000, 1)
+    label = torch.zeros(20001, 1)
 
     f = open("BNN_dataset.txt", "r")
     content = f.readlines()
