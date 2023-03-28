@@ -1,6 +1,6 @@
 # BNN for Packet classification #
 
-Binary data used for training is packets extracted from DARPA 1998 intrusiong dataset.
+Binary data used for training is packets extracted from DARPA 1998 intrusion dataset.
 
 These packets are represented by 126bits that is 5tuple with ACK and Syn Flag, and saved in "BNN_dataset.txt".
 Approximately 180,000 packets are used in dataset.
