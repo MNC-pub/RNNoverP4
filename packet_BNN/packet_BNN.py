@@ -9,8 +9,7 @@ import sys
 from matplotlib import pyplot as plt
 # import inference
 import labeling
-__all__ = ['packetbnn']
-
+#
 class Packetbnn(nn.Module):
 
     def __init__(self, bit):
@@ -36,8 +35,8 @@ class Packetbnn(nn.Module):
             if isinstance(m, nn.Conv2d):
                 # nn.init.kaiming_normal_(m.weight, mode='fan_out')
                 # nn.init.kaiming_normal_(m.weight_org, mode='fan_out')
-                nn.init.uniform_(m.weight, a= -.5, b= 0.5)
-                nn.init.uniform_(m.weight_org, a=-.5, b=0.5)
+                nn.init.uniform_(m.weight, a= -.8, b= 0.2)
+                nn.init.uniform_(m.weight_org, a=-.8, b=0.2)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, nn.BatchNorm2d):
@@ -142,6 +141,7 @@ class Bnntrainer():
             output = self.model(input)
             loss = (output-target).pow(2).sum()
             loss = autograd.Variable(loss, requires_grad=True)
+            print(loss)
             epoch_loss +=loss.item()
             epoch_losses.append([t,epoch_loss])
             optimizer.zero_grad()
@@ -175,54 +175,48 @@ def Bitcount(tensor):
     return activation
 
 
-if __name__ == '__main__':
-    #data load
-    # f = open("output.txt", "r")
-    # content = f.readlines()
-    torch.set_printoptions(threshold=50000)
-    torch.set_printoptions(linewidth=20000)
-    device = torch.device('cpu')
+torch.set_printoptions(threshold=50000)
+torch.set_printoptions(linewidth=20000)
+device = torch.device('cpu')
+print("?")
+# #bit default는 126
+Packetbnn = Packetbnn(bit= 126)
+# Packetbnn.to(device)
+Packetbnn.init_w()
 
-    #bit default는 126
-    Packetbnn = Packetbnn(bit = 126)
-    Packetbnn.to(device)
-    Packetbnn.init_w()
+Bnn = Bnntrainer(Packetbnn, bit=126, lr=0.01, packets= 5000, device='cuda')
+optimizer = torch.optim.Adam(Packetbnn.parameters(), weight_decay=1e-7)
+epoch_losses= Bnn.train_step(optimizer)
+sys.stdout = open('weight.txt', 'w')
+# packet bnn nnlayer 중 Conv2d layer의 weight를 binarize 한후
+# weight.txt에 저장
+print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
 
-    Bnn = Bnntrainer(Packetbnn, bit=126, lr=0.002, packets= 10000, device='cuda')
-    optimizer = torch.optim.Adam(Packetbnn.parameters(), weight_decay=1e-7)
-    epoch_losses= Bnn.train_step(optimizer)
-
-    sys.stdout = open('weight.txt', 'w')
-    #packet bnn nnlayer 중 Conv2d layer의 weight를 binarize 한후
-    #weight.txt에 저장
-    print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
-
-    #packet bnn nnlayer 중 linear layer의 weight를 의미
-    print(Binarize(Packetbnn.features[4].weight).add_(1).div_(2).int())
+#packet bnn nnlayer 중 linear layer의 weight를 의미
+print(Binarize(Packetbnn.features[4].weight).add_(1).div_(2).int())
 
 
-    #A = torch.zeros(200,126)
+#A = torch.zeros(200,126)
 
-    #사용하기 쉽도록 weight.txt 파일에서 의미없는 글자나 띄워쓰기를 제거하는 과정
-    f = open('weight.txt', "r")
-    content = f.readlines()
-    sys.stdout = open('weight_final_bnn.txt', 'w')
-    t = 0
-    for line in content:
-        k = 0
-        if t % 3 == 0:
-            for i in line:
-                if i.isdigit() == True:
-                    if t == 0:
-                        # A[0][k] = int(i)
-                        print(int(i), end='')
-                        k += 1
-                    else:
-                        T = int(t / 3)
-                        # A[T][k] = int(i)
-                        print(int(i), end='')
-                        k += 1
-            print("")
-        t += 1
-
+#사용하기 쉽도록 weight.txt 파일에서 의미없는 글자나 띄워쓰기를 제거하는 과정
+f = open('weight.txt', "r")
+content = f.readlines()
+sys.stdout = open('weight_final_bnn.txt', 'w')
+t = 0
+for line in content:
+    k = 0
+    if t % 3 == 0:
+        for i in line:
+            if i.isdigit() == True:
+                if t == 0:
+                    # A[0][k] = int(i)
+                    print(int(i), end='')
+                    k += 1
+                else:
+                    T = int(t / 3)
+                    # A[T][k] = int(i)
+                    print(int(i), end='')
+                    k += 1
+        print("")
+    t += 1
 
