@@ -1,12 +1,5 @@
 import torch
 #import importliba
-import pandas as pd
-from models import *
-import torch.nn as nn
-from torch.nn import Module, Conv2d, Linear, Conv1d
-from torch.nn.functional import linear, conv2d, conv1d
-import torch.optim as optim
-import os
 import numpy as np
 from torch import save
 import shutil
@@ -20,11 +13,11 @@ def label():
     m_count = 0
     count = 0
 
-    label = np.zeros(20001)
+    label = np.zeros(100001)
     f = open("BNN_dataset.txt", "r")
 
     content = f.readlines()
-    for seq in range(0,18900):
+    for seq in range(0,100000):
         label_malicious = 1
         src_a = content[seq][24:32]
         src_b = content[seq][32:40]
@@ -49,9 +42,10 @@ def label():
 
         dst = [dec_dsta,dec_dstb,dec_dstc,dec_dstd]
 
-        if dec_srca == 11 and dec_srcb == 22 and dec_srcc == 33 and dec_srcd == 44 :
-            if flag == '000010' :
-                label_malicious = -1
+        #if dec_srca == 11 and dec_srcb == 22 and dec_srcc == 33 and dec_srcd == 44 :
+        if flag == '000010' :
+           label_malicious = -1
+
 
     #     if dec_srca == 147 and dec_srcb == 32 :
     #         if dec_srcc == 84:
@@ -103,9 +97,8 @@ def label():
     # sys.stdout = open('bnn_label.txt', 'w')
     # for t in range(len(label)):
     #     print(torch.tensor(label[t]),sep='\n')
+    # print(label)
     return label
-
-# label()
 
 # def checkIRC(dec_srcc,dec_srcd, dst):
 #     label_malicious = 1
