@@ -38,7 +38,7 @@ class Packetbnn(nn.Module):
             BNNLinear(126, num_classes),
             # nn.BatchNorm1d(num_classes, affine=False),
             nn.GroupNorm(1,2),
-            nn.LogSoftmax(dim=1),
+            #nn.LogSoftmax(dim=1),
         )
 
     def forward(self, x):
@@ -118,7 +118,7 @@ class BNNConv2d(Conv2d):
         return out
 
 def XNOR(A, B):
-    R = torch.zeros(126)
+    R = torch.zeros(126, dtype=torch.int64 )
     for i in range(0,126):
         if (A[i] == B[i]) :
             R[i] = 1
@@ -169,6 +169,20 @@ class BnnClassifier():
         tos_count_1 = 0
         tos_count_0 = 0
 
+        data = torch.zeros(30000, 126)
+        f = open("BNN_test_dataset.txt", "r")
+        content = f.readlines()
+        t = 0
+        for line in content:
+            k = 0
+            if t == 10000:
+                break
+            for i in line:
+                if i.isdigit() == True:
+                    data[t][k] = int(i)
+                    k += 1
+            t += 1
+
         target = labeling.label(30000)
         learned_weight[0:126] = Binarize(self.model.features[0].weight).add_(1).div_(2).int()
         weight[0:126] = learned_weight[0:126][0][0][:]
@@ -184,13 +198,13 @@ class BnnClassifier():
             linear_layer_result_1 = XNOR(middle_result2, weight[126])
             linear_layer_result_2 = XNOR(middle_result2, weight[127])
 
-            if Bitcount(linear_layer_result_1)>= Bitcount(linear_layer_result_2):
+            if not torch.ge(torch.bincount(linear_layer_result_1), torch.bincount(linear_layer_result_2))[1] :
                 predict = 0
             else:
                 predict = 1
             # print(predict)
-            target[z] = target[z].astype(np.int32)
             # print(target[z])
+            target[z] = target[z].astype(np.int32)
             if predict == 1:
                 if target[z] == 1:
                     true_positive = true_positive + 1
@@ -200,7 +214,7 @@ class BnnClassifier():
                 if target[z] == 1:
                     false_negative = false_negative + 1
             if z %100 == 0 :
-                 print("testing progress: ", (z-10000)/100, "%" )
+                 print("testing progress: ", (z-10000)/num_test_packet*100, "%" )
 
         total1 = true_positive + false_negative
         total2 = true_positive + false_positive
@@ -212,8 +226,8 @@ class BnnClassifier():
             recall = 0
             f1score = 0
 
-        print("TP : {}, FP : {}, FN : {}, recall rate : {},  f1score : {}".format(
-            true_positive, false_positive, false_negative, recall, f1score))
+        print("TP : {}, FP : {}, FN : {}, recall rate : {}, precision : {},  f1score : {}".format(
+            true_positive, false_positive, false_negative, recall, precision, f1score))
         return
 
     def train_step(self, criterion, optimizer):
@@ -298,6 +312,12 @@ criterion.to(device)
 if hasattr(model, 'init_w'):
     model.init_w()
 
-optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=1e-5)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.03, weight_decay=1e-7)
 
-classification.train(criterion, optimizer, epochs = 3, num_test_packet= 1000)
+classification.train(criterion, optimizer, epochs = 1, num_test_packet= 1000)
+
+#
+# sys.stdout = open('weight.txt', 'w')
+# print(Binarize(Packetbnn.features[0].weight).add_(1).div_(2).int())
+# #packet bnn nnlayer 중 linear layer의 weight를 의미
+# print(Binarize(Packetbnn.features[6].weight).add_(1).div_(2).int())
