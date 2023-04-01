@@ -6,19 +6,18 @@ import shutil
 import pandas as pd
 
 #malicious한 IP로 왔는지 source를 대조
-from kamene.all import *
+# from kamene.all import *
 
-def label():
-    #if malicious = 1
+def label(learning_packets):
     m_count = 0
     count = 0
 
-    label = np.zeros(100001)
-    f = open("BNN_dataset.txt", "r")
+    label = np.zeros(learning_packets)
+    f = open("BNN_test_dataset.txt", "r")
 
     content = f.readlines()
-    for seq in range(0,100000):
-        label_malicious = 1
+    for seq in range(learning_packets):
+        label_malicious = 0
         src_a = content[seq][24:32]
         src_b = content[seq][32:40]
         src_c = content[seq][40:48]
@@ -44,7 +43,7 @@ def label():
 
         #if dec_srca == 11 and dec_srcb == 22 and dec_srcc == 33 and dec_srcd == 44 :
         if flag == '000010' :
-           label_malicious = -1
+           label_malicious = 1
 
 
     #     if dec_srca == 147 and dec_srcb == 32 :
