@@ -168,7 +168,7 @@ class BnnClassifier():
         total2 = 0
         tos_count_1 = 0
         tos_count_0 = 0
-
+        precision = 0
         data = torch.zeros(30000, 126)
         f = open("BNN_test_dataset.txt", "r")
         content = f.readlines()
