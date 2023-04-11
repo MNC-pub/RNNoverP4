@@ -175,7 +175,7 @@ class BnnClassifier():
         t = 0
         for line in content:
             k = 0
-            if t == 10000:
+            if t == 20000:
                 break
             for i in line:
                 if i.isdigit() == True:
